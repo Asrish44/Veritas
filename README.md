@@ -151,6 +151,28 @@ SMTP_FROM="Veritas Security" <your-verified-email@domain.com>
 
 ---
 
+## Cloud Deployment & Remote Ollama Hosting via ngrok
+
+To deploy Veritas on Vercel while keeping Ollama + Qwen3-14B hosted on your local GPU/CPU hardware:
+
+1. **Host Ollama with ngrok**:
+   ```bash
+   ngrok http 11434
+   ```
+   This generates a secure public URL (e.g. `https://kerchief-dinner-pulse.ngrok-free.dev`).
+
+2. **Deploy to Vercel**:
+   Set `OLLAMA_BASE_URL` to your ngrok URL in Vercel project environment variables:
+   - `OLLAMA_BASE_URL`: `https://kerchief-dinner-pulse.ngrok-free.dev`
+   - `OLLAMA_MODEL`: `qwen3:14b`
+   - `LLM_PROVIDER`: `ollama`
+   - `JWT_SECRET`: `your-jwt-secret`
+   - `ADMIN_SECRET_KEY`: `admin-secret-access-link-cbit-2026`
+
+3. Veritas automatically sends the `ngrok-skip-browser-warning: true` header to ensure uninterrupted cloud-to-local inference.
+
+---
+
 ## Admin Console URL
 
 The administrative page can **only** be accessed via its security link token:
@@ -200,3 +222,4 @@ Tests verify:
 
 Built for verifiable, private, evidence-grounded research intelligence.
 MIT License.
+

@@ -145,7 +145,11 @@ export async function POST(req: Request) {
 
       const res = await fetch(`${cfg.baseUrl}/api/generate`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "true",
+          "User-Agent": "Veritas-Client/1.0",
+        },
         body: JSON.stringify({
           model: cfg.model,
           prompt: `${prompt} Answer briefly. /no_think`,

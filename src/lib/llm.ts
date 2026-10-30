@@ -31,7 +31,13 @@ export async function pingOllama(force = false): Promise<{ reachable: boolean; m
   }
   const { baseUrl } = getLlmConfig();
   try {
-    const res = await fetch(`${baseUrl}/api/tags`, { signal: AbortSignal.timeout(2500) });
+    const res = await fetch(`${baseUrl}/api/tags`, {
+      headers: {
+        "ngrok-skip-browser-warning": "true",
+        "User-Agent": "Veritas-Client/1.0",
+      },
+      signal: AbortSignal.timeout(5000),
+    });
     if (!res.ok) throw new Error(`status ${res.status}`);
     const data = (await res.json()) as { models?: { name?: string }[] };
     const models = (data.models || []).map((m) => m.name || "").filter(Boolean);
@@ -124,7 +130,11 @@ export async function chatJson<T>(system: string, user: string, opts: ChatOption
   };
   const res = await fetch(`${cfg.baseUrl}/api/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "ngrok-skip-browser-warning": "true",
+      "User-Agent": "Veritas-Client/1.0",
+    },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(300_000),
   });
