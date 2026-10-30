@@ -65,7 +65,9 @@ export function extractJson(raw: string): unknown {
   let text = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
   text = text.replace(/```(?:json)?/gi, "").trim();
   const start = text.indexOf("{");
-  if (start === -1) throw new Error("no JSON object found in model output");
+  if (start === -1) {
+    return { answer: text, citations: [] };
+  }
   // walk to the matching closing brace
   let depth = 0;
   let inStr = false;
@@ -87,11 +89,15 @@ export function extractJson(raw: string): unknown {
       depth--;
       if (depth === 0) {
         const candidate = text.slice(start, i + 1);
-        return JSON.parse(candidate);
+        try {
+          return JSON.parse(candidate);
+        } catch {
+          return { answer: text, citations: [] };
+        }
       }
     }
   }
-  throw new Error("unbalanced JSON in model output");
+  return { answer: text, citations: [] };
 }
 
 export interface ChatOptions {

@@ -18,6 +18,7 @@ import { hybridSearch, tokenize, type RetrievalPassage } from "@/lib/retriever";
 import { chatJson, getEffectiveProvider } from "@/lib/llm";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 export interface ChatCitation {
   n: number;
@@ -251,7 +252,7 @@ Respond warmly, introduce Veritas, and explain how you can help research their i
         const result = await chatJson<{ answer: string; citations: number[] }>(
           SYSTEM,
           promptContent,
-          { temperature: 0.2, maxTokens: 900 }
+          { temperature: 0.3, maxTokens: 350 }
         );
         if (!result) throw new Error("no answer from engine");
         const { data } = result;
@@ -260,7 +261,19 @@ Respond warmly, introduce Veritas, and explain how you can help research their i
         if (!answer && typeof rawData.response === "string") answer = rawData.response.trim();
         if (!answer && typeof rawData.text === "string") answer = rawData.text.trim();
         if (!answer && typeof rawData.content === "string") answer = rawData.content.trim();
+        if (!answer && typeof rawData.greeting === "string") answer = rawData.greeting.trim();
+        if (!answer && typeof rawData.message === "string") answer = rawData.message.trim();
+        if (!answer && typeof rawData.output === "string") answer = rawData.output.trim();
         if (!answer && typeof rawData.justification === "string") answer = rawData.justification.trim();
+
+        if (!answer) {
+          const firstString = Object.values(rawData).find((v) => typeof v === "string" && v.length > 5);
+          if (firstString) answer = String(firstString).trim();
+        }
+
+        if (!answer && result.raw) {
+          answer = result.raw.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/```(?:json)?/gi, "").trim();
+        }
 
         if (!answer) {
           throw new Error("No non-empty answer found in model output");
