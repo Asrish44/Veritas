@@ -183,6 +183,12 @@ export function ChatView({ user, onSignIn, onSignOut }: Props) {
     async (raw: string) => {
       const question = raw.trim();
       if (!question || sending) return;
+
+      const previousHistory = messages
+        .filter((m) => !m.error && m.content)
+        .slice(-10)
+        .map((m) => ({ role: m.role, content: m.content }));
+
       setInput("");
       setSending(true);
       setMessages((prev) => [...prev, { id: nextId(), role: "user", content: question }]);
@@ -192,6 +198,7 @@ export function ChatView({ user, onSignIn, onSignOut }: Props) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             question,
+            history: previousHistory,
             token: localStorage.getItem(TOKEN_KEY) || undefined,
             sessionId: activeChat || undefined,
           }),
@@ -217,7 +224,7 @@ export function ChatView({ user, onSignIn, onSignOut }: Props) {
         setSending(false);
       }
     },
-    [sending, activeChat, refreshHealth, refreshChats]
+    [sending, activeChat, refreshHealth, refreshChats, messages]
   );
 
   const newChat = () => {

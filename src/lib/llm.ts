@@ -117,21 +117,42 @@ export interface ChatResult<T> {
  * Ask the local Qwen3-14B for a strict-JSON answer.
  * Uses Ollama's native /api/chat with format:"json" and think:false.
  */
-export async function chatJson<T>(system: string, user: string, opts: ChatOptions = {}): Promise<ChatResult<T> | null> {
+export interface ChatHistoryMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export async function chatJson<T>(
+  system: string,
+  user: string,
+  opts: ChatOptions = {},
+  history: ChatHistoryMessage[] = []
+): Promise<ChatResult<T> | null> {
   const cfg = getLlmConfig();
+
+  const historyMessages = (history || [])
+    .filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.trim())
+    .map((m) => ({
+      role: m.role,
+      content: m.content.trim().slice(0, 1500),
+    }));
+
+  const messages = [
+    { role: "system", content: `${system}\n\nAnswer with a single valid JSON object and nothing else. /no_think` },
+    ...historyMessages,
+    { role: "user", content: user },
+  ];
+
   const body = {
     model: cfg.model,
-    messages: [
-      { role: "system", content: `${system}\n\nAnswer with a single valid JSON object and nothing else. /no_think` },
-      { role: "user", content: user },
-    ],
+    messages,
     stream: false,
     format: "json",
     think: false,
     options: {
-      temperature: opts.temperature ?? 0.1,
+      temperature: opts.temperature ?? 0.3,
       num_ctx: opts.contextWindow ?? 8192,
-      num_predict: opts.maxTokens ?? 1400,
+      num_predict: opts.maxTokens ?? 350,
     },
   };
   const res = await fetch(`${cfg.baseUrl}/api/chat`, {
