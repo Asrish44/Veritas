@@ -3,6 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowUp,
+  Check,
+  CheckCircle2,
+  FileCheck,
+  FileText,
   FileUp,
   History,
   Loader2,
@@ -14,6 +18,7 @@ import {
   ShieldCheck,
   Sparkles,
   Trash2,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -51,6 +56,16 @@ interface ChatSummary {
 interface HealthLite {
   ready: boolean;
   store: { papers: number; passages: number; claims: number };
+}
+
+interface UploadedPaper {
+  id: string;
+  title: string;
+  fileName: string;
+  pages: number;
+  status: string;
+  createdAt: string;
+  _count?: { passages: number; claims: number };
 }
 
 interface Props {
@@ -125,6 +140,8 @@ export function ChatView({ user, onSignIn, onSignOut }: Props) {
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [papers, setPapers] = useState<UploadedPaper[]>([]);
+  const [showFilesDialog, setShowFilesDialog] = useState(false);
 
   const fileRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -157,10 +174,36 @@ export function ChatView({ user, onSignIn, onSignOut }: Props) {
     }
   }, []);
 
+  const refreshPapers = useCallback(async () => {
+    try {
+      const res = await fetch("/api/papers");
+      if (!res.ok) return;
+      const data = await res.json();
+      setPapers(data.papers || []);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const deletePaper = async (id: string, name: string) => {
+    if (!confirm(`Remove "${name}" from this workspace?`)) return;
+    try {
+      const res = await fetch(`/api/papers/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        toast({ title: "Document removed", description: `Removed ${name} from workspace` });
+        void refreshHealth();
+        void refreshPapers();
+      }
+    } catch {
+      toast({ title: "Failed to remove document", variant: "destructive" });
+    }
+  };
+
   useEffect(() => {
     void refreshHealth();
     void refreshChats();
-  }, [refreshHealth, refreshChats]);
+    void refreshPapers();
+  }, [refreshHealth, refreshChats, refreshPapers]);
 
   useEffect(() => {
     if (!sending) return;
@@ -282,10 +325,34 @@ export function ChatView({ user, onSignIn, onSignOut }: Props) {
       if (data.error) {
         toast({ title: "Upload failed", description: data.error, variant: "destructive" });
       } else {
-        const n = (data.created || []).length;
-        toast({ title: `${n} document${n === 1 ? "" : "s"} added`, description: "DOCX, PDF, TXT, MD processed and ready for Qwen3-14B." });
+        const createdList = (data.created || []).filter((c: any) => !c.error);
+        const errorList = (data.created || []).filter((c: any) => c.error);
+        const skippedList = data.skipped || [];
+
+        if (createdList.length > 0) {
+          const names = createdList.map((c: any) => c.name).join(", ");
+          toast({
+            title: `✓ ${createdList.length} document${createdList.length === 1 ? "" : "s"} indexed`,
+            description: `Successfully added: ${names}. Grounded with BGE embeddings for Qwen3-14B.`,
+          });
+        }
+        if (skippedList.length > 0) {
+          const names = skippedList.map((s: any) => s.name).join(", ");
+          toast({ title: "Already in workspace", description: names });
+        }
+        if (errorList.length > 0) {
+          const names = errorList.map((e: any) => e.name).join(", ");
+          toast({ title: "Failed to parse", description: names, variant: "destructive" });
+        }
         void refreshHealth();
+        void refreshPapers();
       }
+    } catch (err) {
+      toast({
+        title: "Upload error",
+        description: err instanceof Error ? err.message : "Failed to upload files",
+        variant: "destructive",
+      });
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -350,7 +417,72 @@ export function ChatView({ user, onSignIn, onSignOut }: Props) {
         </Button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-700 [&::-webkit-scrollbar]:w-1.5">
-        <p className="px-2 pb-1.5 pt-2 text-[10px] font-semibold uppercase tracking-widest text-slate-600">History</p>
+        {/* Workspace Sources */}
+        <div className="mb-4">
+          <div className="flex items-center justify-between px-2 pb-1.5 pt-2">
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 flex items-center gap-1.5">
+              <FileText className="h-3 w-3 text-emerald-400" />
+              Sources ({papers.length})
+            </span>
+            <button
+              onClick={() => fileRef.current?.click()}
+              title="Add document to workspace"
+              className="rounded p-0.5 text-slate-500 hover:text-emerald-400 hover:bg-slate-800 transition-colors"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
+          </div>
+
+          {papers.length === 0 ? (
+            <div className="mx-1 rounded-xl border border-dashed border-slate-800/80 p-2.5 text-center bg-slate-900/30">
+              <FileUp className="mx-auto h-4 w-4 text-slate-600" />
+              <p className="mt-1 text-[11px] text-slate-400 font-medium">No files uploaded</p>
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                className="mt-1 text-[10px] text-emerald-400 hover:underline inline-block font-medium"
+              >
+                + Upload PDF or DOCX
+              </button>
+            </div>
+          ) : (
+            <ul className="space-y-1">
+              {papers.map((p) => {
+                const ext = p.fileName.split(".").pop()?.toUpperCase() || "DOC";
+                return (
+                  <li
+                    key={p.id}
+                    className="group relative flex items-center justify-between rounded-lg px-2.5 py-1.5 bg-slate-900/70 border border-slate-800/70 hover:border-slate-700 hover:bg-slate-900 transition-colors"
+                  >
+                    <div className="min-w-0 flex-1 pr-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className="rounded bg-emerald-500/15 text-emerald-300 px-1 py-0.5 text-[9px] font-mono font-bold leading-none">
+                          .{ext}
+                        </span>
+                        <span className="truncate text-xs font-medium text-slate-200" title={p.fileName}>
+                          {p.title}
+                        </span>
+                      </div>
+                      <span className="mt-0.5 block text-[10px] text-slate-500">
+                        {p.pages > 0 ? `${p.pages}p · ` : ""}{p._count?.passages ?? 0} passages
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void deletePaper(p.id, p.fileName)}
+                      title="Remove document"
+                      className="hidden h-5 w-5 items-center justify-center rounded text-slate-500 hover:text-rose-400 hover:bg-slate-800 group-hover:flex transition-colors"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+
+        <p className="px-2 pb-1.5 pt-2 text-[10px] font-semibold uppercase tracking-widest text-slate-600 border-t border-slate-800/60">History</p>
         {!user ? (
           <div className="mx-1 rounded-xl border border-dashed border-slate-800 p-3 text-center">
             <History className="mx-auto h-4 w-4 text-slate-600" />
@@ -457,10 +589,28 @@ export function ChatView({ user, onSignIn, onSignOut }: Props) {
             </div>
             <span className="text-sm font-semibold tracking-tight">Veritas</span>
             <div className="ml-auto flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowFilesDialog(true)}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-all ${
+                  papers.length > 0
+                    ? "border-emerald-500/40 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-900/40"
+                    : "border-slate-800 bg-slate-900/50 text-slate-400 hover:border-slate-700 hover:text-slate-300"
+                }`}
+                title="View and manage workspace sources"
+              >
+                <FileText className={`h-3.5 w-3.5 ${papers.length > 0 ? "text-emerald-400" : "text-slate-500"}`} />
+                <span>
+                  {papers.length > 0
+                    ? `${papers.length} source${papers.length === 1 ? "" : "s"} active`
+                    : "0 sources"}
+                </span>
+              </button>
+
               <Button
                 size="sm"
-                variant="ghost"
-                className="h-7 gap-1.5 px-2.5 text-xs text-slate-300 hover:text-slate-100 hover:bg-slate-800"
+                variant="outline"
+                className="h-7 gap-1.5 px-2.5 text-xs border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10"
                 onClick={() => fileRef.current?.click()}
                 disabled={uploading}
               >
@@ -644,6 +794,38 @@ export function ChatView({ user, onSignIn, onSignOut }: Props) {
               </div>
             )}
 
+            {/* Active Sources Indicator Bar */}
+            {papers.length > 0 && (
+              <div className="flex items-center justify-between border-t border-slate-800/80 bg-slate-950/60 px-4 py-2 text-xs">
+                <div className="flex items-center gap-2 overflow-x-auto py-0.5 [&::-webkit-scrollbar]:hidden">
+                  <span className="shrink-0 text-[11px] font-semibold text-emerald-400 flex items-center gap-1">
+                    <CheckCircle2 className="h-3 w-3" />
+                    Sources ({papers.length}):
+                  </span>
+                  {papers.map((p) => {
+                    const ext = p.fileName.split(".").pop()?.toUpperCase() || "DOC";
+                    return (
+                      <span
+                        key={p.id}
+                        className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-slate-800 bg-slate-900/90 px-2 py-0.5 text-[11px] text-slate-300"
+                        title={`${p.fileName} (${p.pages} pages, ${p._count?.passages ?? 0} passages)`}
+                      >
+                        <span className="font-mono text-[9px] text-emerald-400 font-bold">.{ext}</span>
+                        <span className="max-w-[120px] truncate">{p.title}</span>
+                      </span>
+                    );
+                  })}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowFilesDialog(true)}
+                  className="shrink-0 text-[11px] text-emerald-400 hover:underline ml-2 font-medium"
+                >
+                  Manage
+                </button>
+              </div>
+            )}
+
             {/* input */}
             <form
               className="flex items-center gap-2 p-3 sm:p-4"
@@ -682,6 +864,97 @@ export function ChatView({ user, onSignIn, onSignOut }: Props) {
           </p>
         </main>
       </div>
+
+      {/* Workspace Documents Modal */}
+      {showFilesDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-2xl border border-slate-800 bg-slate-950 p-6 shadow-2xl relative">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                  <FileText className="h-4 w-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-100">Workspace Documents</h3>
+                  <p className="text-[11px] text-slate-400">Sources indexed for evidence-grounded answers with Qwen3-14B</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowFilesDialog(false)}
+                className="rounded-lg p-1.5 text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="my-4 max-h-72 overflow-y-auto space-y-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-700 [&::-webkit-scrollbar]:w-1.5 pr-1">
+              {papers.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-800 p-6 text-center bg-slate-900/30">
+                  <FileUp className="mx-auto h-8 w-8 text-slate-600 mb-2" />
+                  <p className="text-xs font-medium text-slate-300">No documents in workspace yet</p>
+                  <p className="text-[11px] text-slate-500 mt-1">Upload PDF, DOCX, TXT, MD, or CSV files to ground your queries.</p>
+                </div>
+              ) : (
+                papers.map((p) => {
+                  const ext = p.fileName.split(".").pop()?.toUpperCase() || "DOC";
+                  return (
+                    <div
+                      key={p.id}
+                      className="flex items-center justify-between rounded-xl border border-slate-800/80 bg-slate-900/60 p-3 hover:border-slate-700 transition-colors"
+                    >
+                      <div className="min-w-0 flex-1 pr-3">
+                        <div className="flex items-center gap-2">
+                          <span className="rounded bg-emerald-500/15 text-emerald-300 px-1.5 py-0.5 text-[10px] font-mono font-bold">
+                            .{ext}
+                          </span>
+                          <span className="truncate text-xs font-semibold text-slate-200">{p.title}</span>
+                        </div>
+                        <div className="mt-1 flex items-center gap-2 text-[10px] text-slate-500">
+                          <span>{p.fileName}</span>
+                          <span>·</span>
+                          <span>{p.pages > 0 ? `${p.pages} pages · ` : ""}${p._count?.passages ?? 0} passages indexed</span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void deletePaper(p.id, p.fileName)}
+                        title="Remove document from workspace"
+                        className="h-8 w-8 flex items-center justify-center rounded-lg text-slate-500 hover:text-rose-400 hover:bg-slate-800 transition-colors"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="pt-3 border-t border-slate-800 flex items-center justify-between">
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5 text-xs border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10"
+                onClick={() => {
+                  setShowFilesDialog(false);
+                  fileRef.current?.click();
+                }}
+              >
+                <FileUp className="h-3.5 w-3.5" />
+                Upload New File
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-xs text-slate-400 hover:text-slate-200"
+                onClick={() => setShowFilesDialog(false)}
+              >
+                Close
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
