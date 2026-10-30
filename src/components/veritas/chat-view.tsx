@@ -607,16 +607,6 @@ export function ChatView({ user, onSignIn, onSignOut }: Props) {
                 </span>
               </button>
 
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 gap-1.5 px-2.5 text-xs border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10"
-                onClick={() => fileRef.current?.click()}
-                disabled={uploading}
-              >
-                {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-400" /> : <FileUp className="h-3.5 w-3.5 text-emerald-400" />}
-                {uploading ? "Indexing..." : "Upload Files"}
-              </Button>
               <input
                 ref={fileRef}
                 type="file"
