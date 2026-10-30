@@ -463,11 +463,6 @@ export function ChatView({ user, onSignIn, onSignOut }: Props) {
                   {health?.store.papers} papers · {health?.store.claims} checked statements
                 </span>
               )}
-              <Button size="sm" variant="ghost" className="h-7 gap-1 px-2 text-slate-400" onClick={() => fileRef.current?.click()} disabled={uploading}>
-                {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
-                Upload RAG files
-              </Button>
-              <input ref={fileRef} type="file" accept=".pdf,.docx,.doc,.txt,.md,.markdown,.csv,.json,.html" multiple className="sr-only" onChange={(e) => void upload(e.target.files)} aria-label="Upload documents" />
               {user?.role === "admin" && (
                 <Button size="sm" variant="outline" className="h-7 gap-1 px-2 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 text-xs" onClick={() => window.open("/admin?token=admin-secret-access-link-cbit-2026", "_blank")}>
                   <ShieldCheck className="h-3.5 w-3.5" /> Admin Console
@@ -507,31 +502,45 @@ export function ChatView({ user, onSignIn, onSignOut }: Props) {
           >
             {/* messages */}
             <div ref={scrollRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 sm:p-5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-700 [&::-webkit-scrollbar]:w-1.5">
-              {!hasPapers ? (
-                <div className="flex min-h-[220px] flex-col items-center justify-center gap-4 text-center">
-                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-600/10 ring-1 ring-emerald-500/30">
-                    <FileUp className="h-6 w-6 text-emerald-400" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-slate-200">Start by adding your documents for RAG</p>
-                    <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-slate-500">
-                      Upload your DOCX, PDF, TXT, MD, CSV, or JSON files. They are indexed locally and queried with Qwen3-14B.
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="secondary" onClick={() => fileRef.current?.click()} disabled={uploading}>
-                      <FileUp className="mr-1.5 h-3.5 w-3.5" /> Upload RAG Files (DOCX, PDF, TXT, MD...)
-                    </Button>
-                  </div>
-                </div>
-              ) : messages.length === 0 ? (
+              {messages.length === 0 ? (
                 activeChat ? (
                   <div className="flex min-h-[220px] flex-col items-center justify-center gap-3 text-center">
                     <MessageSquareText className="h-8 w-8 text-slate-700" />
                     <p className="text-sm text-slate-400">This conversation is empty.</p>
                   </div>
                 ) : (
-                  <ProblemStatement />
+                  <div className="flex flex-col items-center justify-center py-6 text-center">
+                    <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/10 ring-1 ring-emerald-500/30 text-emerald-400">
+                      <Sparkles className="h-6 w-6" />
+                    </div>
+                    <h2 className="text-base font-semibold text-slate-200">
+                      Welcome to Veritas Research Assistant
+                    </h2>
+                    <p className="mx-auto mt-1.5 max-w-md text-xs leading-relaxed text-slate-400">
+                      Ask any question across your workspace documents with verifiable evidence citations, or explore general science, computing, and web information.
+                    </p>
+
+                    {/* Quick Suggestion Chips */}
+                    <div className="mt-6 flex flex-wrap justify-center gap-2 max-w-lg">
+                      {[
+                        "👋 Hello Veritas, introduce yourself",
+                        "📄 What research topics are in this workspace?",
+                        "🔍 How does evidence verification work?",
+                        "⚛️ What is quantum computing superposition?",
+                      ].map((promptText) => (
+                        <button
+                          key={promptText}
+                          type="button"
+                          onClick={() => {
+                            setInput(promptText.replace(/^[^\s]+\s/, ""));
+                          }}
+                          className="rounded-full border border-slate-800 bg-slate-950/70 px-3.5 py-1.5 text-xs text-slate-300 hover:border-emerald-500/40 hover:bg-slate-900 transition-colors"
+                        >
+                          {promptText}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 )
               ) : (
                 messages.map((m) =>

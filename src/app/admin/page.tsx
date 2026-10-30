@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
@@ -10,16 +10,20 @@ import {
   Copy,
   Cpu,
   Database,
+  FilePlus,
   FileText,
+  FileUp,
   KeyRound,
   Link as LinkIcon,
   Loader2,
   Lock,
+  Plus,
   RefreshCw,
   Send,
   Shield,
   ShieldAlert,
   Trash2,
+  UploadCloud,
   Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -76,6 +80,43 @@ function AdminContent() {
   const [testPrompt, setTestPrompt] = useState("Explain how Two-Factor Authentication protects user data in 2 concise sentences.");
   const [testingModel, setTestingModel] = useState(false);
   const [testResult, setTestResult] = useState<{ durationMs: number; response: string } | null>(null);
+
+  // Document Ingestion state
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingDocs, setUploadingDocs] = useState(false);
+  const [uploadProgressMsg, setUploadProgressMsg] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+
+  const handleUploadFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setUploadingDocs(true);
+    setUploadProgressMsg(`Uploading & indexing ${files.length} document(s)...`);
+
+    try {
+      const fd = new FormData();
+      for (let i = 0; i < files.length; i++) {
+        fd.append("files", files[i]);
+      }
+      const authToken = (typeof window !== "undefined" && (sessionStorage.getItem("veritas_jwt") || localStorage.getItem("veritas_token"))) || "";
+      const res = await fetch("/api/papers", {
+        method: "POST",
+        headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+        body: fd,
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.error || "Failed to upload documents");
+      }
+      setUploadProgressMsg(`Successfully ingested ${json.count || files.length} document(s) into RAG knowledge base!`);
+      setTimeout(() => setUploadProgressMsg(null), 5000);
+      await loadAdminData(token);
+    } catch (err) {
+      setUploadProgressMsg(err instanceof Error ? `Upload error: ${err.message}` : "Failed to upload");
+    } finally {
+      setUploadingDocs(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
 
   // Fetch admin data
   const loadAdminData = async (activeToken: string) => {
@@ -539,13 +580,70 @@ function AdminContent() {
             <div>
               <h3 className="text-sm font-semibold text-slate-100 flex items-center gap-2">
                 <FileText className="h-4 w-4 text-cyan-400" />
-                Ingested Documents (DOCX, PDF, TXT, MD, CSV, JSON)
+                RAG Knowledge Base & Ingested Documents
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
-                Processed, paginated, chunked and indexed into vector embeddings for Qwen3-14B retrieval.
+                Upload and manage documents (DOCX, PDF, TXT, MD, CSV, JSON). Chunked and indexed with BGE-Small embeddings for Qwen3-14B retrieval.
               </p>
             </div>
-            <span className="text-xs text-slate-500">{data.papers.length} documents</span>
+            <span className="text-xs text-slate-500">{data.papers.length} documents indexed</span>
+          </div>
+
+          {/* RAG Document Ingestion Zone */}
+          <div
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragOver(true);
+            }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragOver(false);
+              void handleUploadFiles(e.dataTransfer.files);
+            }}
+            className={`mb-5 rounded-xl border-2 border-dashed p-6 text-center transition-all ${
+              dragOver
+                ? "border-cyan-400 bg-cyan-950/30"
+                : "border-slate-800 bg-slate-950/60 hover:border-slate-700"
+            }`}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.docx,.doc,.txt,.md,.markdown,.csv,.json,.html"
+              multiple
+              className="sr-only"
+              onChange={(e) => void handleUploadFiles(e.target.files)}
+            />
+            <div className="flex flex-col items-center justify-center gap-2">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                {uploadingDocs ? <Loader2 className="h-5 w-5 animate-spin" /> : <UploadCloud className="h-5 w-5" />}
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-slate-200">
+                  Upload Documents to RAG Knowledge Base
+                </p>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Drag & drop or select <strong className="text-slate-300">DOCX, PDF, TXT, MD, CSV, or JSON</strong> files. Automatically chunked & embedded for Qwen3-14B.
+                </p>
+              </div>
+              <div className="mt-1 flex items-center gap-2">
+                <Button
+                  size="sm"
+                  disabled={uploadingDocs}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="bg-cyan-600 hover:bg-cyan-500 text-white text-xs gap-1.5 h-8 shadow-sm"
+                >
+                  {uploadingDocs ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileUp className="h-3.5 w-3.5" />}
+                  {uploadingDocs ? "Indexing Passages..." : "Choose Files to Ingest"}
+                </Button>
+              </div>
+              {uploadProgressMsg && (
+                <p className="mt-2 text-xs font-medium text-cyan-400 animate-pulse">
+                  {uploadProgressMsg}
+                </p>
+              )}
+            </div>
           </div>
 
           {data.papers.length === 0 ? (
