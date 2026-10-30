@@ -137,6 +137,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true });
     }
 
+    // 4. Clear all documents
+    if (body.action === "clearAllPapers") {
+      await db.claim.deleteMany({});
+      await db.passage.deleteMany({});
+      await db.paper.deleteMany({});
+      return NextResponse.json({ success: true, message: "All workspace documents cleared." });
+    }
+
     // 4. Test Qwen3-14B inference live
     if (body.action === "testModel") {
       const prompt = body.testPrompt || "Explain how Two-Factor Authentication protects against credential stuffing in 2 sentences.";

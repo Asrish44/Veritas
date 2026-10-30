@@ -226,6 +226,26 @@ function AdminContent() {
     }
   };
 
+  const handleClearAllPapers = async () => {
+    if (!confirm("Are you sure you want to delete all indexed documents from this workspace?")) return;
+    try {
+      const res = await fetch(`/api/admin?token=${encodeURIComponent(token)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "clearAllPapers" }),
+      });
+      if (res.ok) {
+        setData({
+          ...data!,
+          papers: [],
+          stats: { ...data!.stats, totalPapers: 0, totalPassages: 0, totalClaims: 0 },
+        });
+      }
+    } catch {
+      alert("Failed to clear documents");
+    }
+  };
+
   const handleRunModelTest = async () => {
     setTestingModel(true);
     setTestResult(null);
@@ -586,7 +606,20 @@ function AdminContent() {
                 Upload and manage documents (DOCX, PDF, TXT, MD, CSV, JSON). Chunked and indexed with BGE-Small embeddings for Qwen3-14B retrieval.
               </p>
             </div>
-            <span className="text-xs text-slate-500">{data.papers.length} documents indexed</span>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-slate-500">{data.papers.length} documents indexed</span>
+              {data.papers.length > 0 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 border-rose-500/30 text-rose-400 hover:bg-rose-500/10 text-xs gap-1.5"
+                  onClick={handleClearAllPapers}
+                >
+                  <Trash2 className="h-3 w-3" />
+                  Clear All Documents
+                </Button>
+              )}
+            </div>
           </div>
 
           {/* RAG Document Ingestion Zone */}

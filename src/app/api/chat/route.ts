@@ -100,9 +100,7 @@ export async function POST(req: Request) {
     }
 
     const papers = await db.paper.findMany({ include: { passages: true } });
-    if (papers.length === 0) {
-      return NextResponse.json({ error: "No papers indexed yet — add research papers first." }, { status: 400 });
-    }
+    const hasWorkspacePapers = papers.length > 0;
     const titleOf = new Map(papers.map((p) => [p.id, p.title]));
 
     const passages: RetrievalPassage[] = papers.flatMap((p) =>
@@ -118,7 +116,7 @@ export async function POST(req: Request) {
       }))
     );
 
-    const { results } = await hybridSearch(q, passages, 6);
+    const { results } = passages.length > 0 ? await hybridSearch(q, passages, 6) : { results: [] };
 
     // Relevant verified claims (already through the validation gate) by token overlap.
     const qTok = new Set(tokenize(q));
@@ -212,7 +210,25 @@ export async function POST(req: Request) {
     if (provider === "ollama") {
       let promptContent = "";
 
-      if (isGreeting) {
+      const isWorkspaceOverview =
+        /what (research topics|papers|documents|files|topics).*(workspace|here|database|indexed)/i.test(q) ||
+        /what is in (this |the )?(workspace|database)/i.test(q) ||
+        /list (all )?(papers|documents|topics)/i.test(q);
+
+      if (isWorkspaceOverview && !hasWorkspacePapers) {
+        const noDocsMsg = "There are currently no research documents uploaded in this workspace. You can upload PDF, Word, or text files using the 'Upload Files' button or the paperclip icon in the chat bar, and Veritas will index and cite them for you.";
+        const sid = await persist(noDocsMsg, []);
+        return NextResponse.json({ answer: noDocsMsg, citations: [], sessionId: sid });
+      }
+
+      if (isWorkspaceOverview && hasWorkspacePapers) {
+        const paperList = papers.map((p, idx) => `${idx + 1}. "${p.title}" (${p.fileName})`).join("\n");
+        promptContent = `The user asked: "${q}".
+Here are the actual research documents currently indexed in this workspace:
+${paperList}
+
+Summarize what topics these specific research papers cover in 2-3 clear, informative sentences. Mention the document titles.`;
+      } else if (isGreeting) {
         promptContent = `The user is greeting: "${q}".
 Respond warmly, introduce Veritas, and explain how you can help research their indexed workspace documents, verify research claims, or answer any general questions.`;
       } else if (isWorkspaceQuery) {
@@ -307,7 +323,9 @@ Respond warmly, introduce Veritas, and explain how you can help research their i
       }
       answer = lines.length
         ? `Here are the closest passages in your papers: ${lines.join(" ")}`
-        : `Your papers don't contain passages that directly match that question.`;
+        : hasWorkspacePapers
+          ? `Your workspace documents don't contain passages that directly match that question.`
+          : `There are currently no documents uploaded in this workspace. You can upload files via the 'Upload Files' button or paperclip icon.`;
     }
     if (relevantClaims.length > 0) {
       const withEv = relevantClaims.filter((x) => x.c.evidenceText);
