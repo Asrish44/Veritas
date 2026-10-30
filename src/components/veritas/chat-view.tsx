@@ -450,24 +450,25 @@ export function ChatView({ user, onSignIn, onSignOut }: Props) {
             </div>
             <span className="text-sm font-semibold tracking-tight">Veritas</span>
             <div className="ml-auto flex items-center gap-2">
-              <span
-                className={`hidden items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] sm:inline-flex ${
-                  engineOk ? "border-emerald-500/30 text-emerald-400" : "border-amber-500/30 text-amber-400"
-                }`}
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 gap-1.5 px-2.5 text-xs text-slate-300 hover:text-slate-100 hover:bg-slate-800"
+                onClick={() => fileRef.current?.click()}
+                disabled={uploading}
               >
-                <span className={`h-1.5 w-1.5 rounded-full ${engineOk ? "bg-emerald-400" : "bg-amber-400"}`} />
-                {health === null ? "checking…" : engineOk ? "AI ready" : "Basic mode"}
-              </span>
-              {hasPapers && (
-                <span className="hidden rounded-full border border-slate-700 px-2.5 py-1 text-[11px] text-slate-400 md:inline-flex">
-                  {health?.store.papers} papers · {health?.store.claims} checked statements
-                </span>
-              )}
-              {user?.role === "admin" && (
-                <Button size="sm" variant="outline" className="h-7 gap-1 px-2 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 text-xs" onClick={() => window.open("/admin?token=admin-secret-access-link-cbit-2026", "_blank")}>
-                  <ShieldCheck className="h-3.5 w-3.5" /> Admin Console
-                </Button>
-              )}
+                {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-400" /> : <FileUp className="h-3.5 w-3.5 text-emerald-400" />}
+                {uploading ? "Indexing..." : "Upload Files"}
+              </Button>
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".pdf,.docx,.doc,.txt,.md,.markdown,.csv,.json,.html"
+                multiple
+                className="sr-only"
+                onChange={(e) => void upload(e.target.files)}
+                aria-label="Upload documents"
+              />
             </div>
           </div>
         </header>
@@ -479,15 +480,11 @@ export function ChatView({ user, onSignIn, onSignOut }: Props) {
               <h1 className="text-2xl font-semibold leading-tight tracking-tight sm:text-3xl">
                 Every answer shows its <span className="bg-gradient-to-r from-emerald-300 to-emerald-500 bg-clip-text text-transparent">proof</span>.
               </h1>
-              {hasPapers ? (
-                <p className="mx-auto mt-2 max-w-lg text-xs leading-relaxed text-slate-500">
-                  Ask anything about your papers — each statement links to the exact place it came from.
-                </p>
-              ) : (
-                <p className="mx-auto mt-2 max-w-lg text-xs leading-relaxed text-slate-500">
-                  Add your papers to get started — everything runs right on this computer.
-                </p>
-              )}
+              <p className="mx-auto mt-2 max-w-lg text-xs leading-relaxed text-slate-500">
+                {hasPapers
+                  ? "Ask anything about your workspace documents — each statement links to verifiable proof."
+                  : "Upload documents or ask anything directly — every answer is backed by verifiable sources."}
+              </p>
             </section>
           )}
 
@@ -649,17 +646,25 @@ export function ChatView({ user, onSignIn, onSignOut }: Props) {
               }}
             >
               <div className="relative flex-1">
-                <Paperclip className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-600" />
+                <button
+                  type="button"
+                  onClick={() => fileRef.current?.click()}
+                  title="Upload documents"
+                  className="absolute left-2.5 top-2 rounded p-0.5 text-slate-500 hover:text-emerald-400 transition-colors"
+                  aria-label="Upload documents"
+                >
+                  <Paperclip className="h-4 w-4" />
+                </button>
                 <input
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder={hasPapers ? "Ask about your papers…" : "Add papers first, then ask anything…"}
-                  disabled={!hasPapers || sending}
+                  placeholder="Ask anything about your workspace documents or general knowledge…"
+                  disabled={sending}
                   className="h-9 w-full rounded-xl border border-slate-800 bg-slate-950/70 pl-9 pr-3 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-emerald-600 disabled:opacity-50"
                   aria-label="Question"
                 />
               </div>
-              <Button size="icon" className="h-9 w-9 rounded-xl" type="submit" disabled={!hasPapers || sending || !input.trim()} aria-label="Send">
+              <Button size="icon" className="h-9 w-9 rounded-xl" type="submit" disabled={sending || !input.trim()} aria-label="Send">
                 {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
               </Button>
             </form>
