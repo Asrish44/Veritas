@@ -106,7 +106,6 @@ app.post("/api/auth/register", async (req: Request, res: Response) => {
       otpRequired: true,
       email: cleanEmail,
       message: "Registration complete. Please verify with the 6-digit OTP sent to your email.",
-      devCode: process.env.NODE_ENV !== "production" ? code : undefined,
     });
   } catch (err) {
     return res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
@@ -146,7 +145,6 @@ app.post("/api/auth/login", async (req: Request, res: Response) => {
     return res.json({
       otpRequired: true,
       email: cleanEmail,
-      devCode: process.env.NODE_ENV !== "production" ? code : undefined,
     });
   } catch (err) {
     return res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
@@ -246,7 +244,6 @@ app.post("/api/send-otp", async (req: Request, res: Response) => {
     return res.json({
       success: true,
       message: "Verification code sent.",
-      devCode: process.env.NODE_ENV !== "production" ? code : undefined,
     });
   } catch (err) {
     return res.status(500).json({ error: err instanceof Error ? err.message : String(err) });

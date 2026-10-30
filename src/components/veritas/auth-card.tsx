@@ -39,7 +39,6 @@ export function AuthCard({ onSuccess, onBack, onSkip }: Props) {
   // Step 2: 2FA OTP state
   const [isOtpStep, setIsOtpStep] = useState(false);
   const [otpDigits, setOtpDigits] = useState<string[]>(["", "", "", "", "", ""]);
-  const [devCode, setDevCode] = useState<string | null>(null);
   const [resendCooldown, setResendCooldown] = useState(0);
 
   const [busy, setBusy] = useState(false);
@@ -94,9 +93,6 @@ export function AuthCard({ onSuccess, onBack, onSkip }: Props) {
       // Step 2 transition: Server verified credentials and issued OTP
       if (data.otpRequired) {
         setIsOtpStep(true);
-        if (data.devCode) {
-          setDevCode(data.devCode);
-        }
         setResendCooldown(45);
         toast({
           title: "Verification code sent",
@@ -178,9 +174,6 @@ export function AuthCard({ onSuccess, onBack, onSkip }: Props) {
         return;
       }
 
-      if (data.devCode) {
-        setDevCode(data.devCode);
-      }
       setResendCooldown(45);
       setOtpDigits(["", "", "", "", "", ""]);
       digitInputRefs.current[0]?.focus();
@@ -419,23 +412,7 @@ export function AuthCard({ onSuccess, onBack, onSkip }: Props) {
                   ))}
                 </div>
 
-                {/* Dev Mode Quick-Fill Assistant */}
-                {devCode && (
-                  <div className="flex items-center justify-between rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-xs">
-                    <span className="text-slate-400 font-mono text-[11px]">Dev Code: <strong className="text-cyan-400">{devCode}</strong></span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const split = devCode.split("");
-                        setOtpDigits(split);
-                        void handleVerifyOtp(devCode);
-                      }}
-                      className="text-[11px] text-emerald-400 hover:underline font-medium"
-                    >
-                      Quick Fill & Verify →
-                    </button>
-                  </div>
-                )}
+
 
                 {error && (
                   <p role="alert" className="rounded-lg border border-rose-800/60 bg-rose-950/40 px-3 py-2 text-xs text-rose-300">

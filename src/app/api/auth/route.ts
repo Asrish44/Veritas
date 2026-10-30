@@ -75,8 +75,6 @@ export async function POST(req: Request) {
         otpRequired: true,
         email: user.email,
         message: "Account registered! A 6-digit verification code has been sent to your email.",
-        // For developer visibility in local test environments
-        devCode: process.env.NODE_ENV !== "production" ? otpCode : undefined,
       });
     }
 
@@ -112,7 +110,6 @@ export async function POST(req: Request) {
         otpRequired: true,
         email: user.email,
         message: "Credentials verified. Please enter the 6-digit verification code sent to your email.",
-        devCode: process.env.NODE_ENV !== "production" ? otpCode : undefined,
       });
     }
 
