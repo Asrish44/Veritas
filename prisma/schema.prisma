@@ -1,0 +1,132 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Paper {
+  id         String    @id @default(cuid())
+  title      String
+  fileName   String
+  hash       String    @unique
+  pages      Int       @default(0)
+  status     String    @default("UPLOADED") // UPLOADED | PROCESSING | READY | FAILED
+  error      String?
+  extraction String? // JSON: { objectives, methodology, keyFindings[], limitations[] }
+  summary    String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  passages   Passage[]
+  claims     Claim[]
+}
+
+model Passage {
+  id        String  @id @default(cuid())
+  paperId   String
+  ref       String  @unique // stable evidence ID: {hash8}::p{page}::c{idx}
+  paper     Paper   @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  page      Int
+  ordinal   Int
+  section   String  @default("body")
+  text      String
+  embedding String? // JSON float array (local bge-small via transformers.js)
+}
+
+model Claim {
+  id             String   @id @default(cuid())
+  paperId        String?
+  paper          Paper?   @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  text           String
+  position       Int      @default(0)
+  sourceDoc      String // "summary:{paperId}" | "comparison:{comparisonId}"
+  classification String? // SUPPORTED | CONTRADICTED | UNRESOLVED
+  evidenceRef    String? // stable passage ref
+  evidenceText   String?
+  evidencePage   Int?
+  evidencePaper  String? // paper title of the evidence
+  quote          String?
+  justification  String?
+  gateStatus     String? // PASS | DOWNGRADED
+  gateReason     String?
+  taxonomy       String? // REAL_DISAGREEMENT | DATASET_DIFF | METRIC_DIFF | SAMPLE_DIFF | DEFINITION_DIFF
+  taxonomyNote   String?
+  model          String?
+  createdAt      DateTime @default(now())
+}
+
+model Comparison {
+  id        String   @id @default(cuid())
+  paperAId  String
+  paperBId  String
+  titleA    String
+  titleB    String
+  content   String // JSON: { comparison, matrix[], directions[] }
+  createdAt DateTime @default(now())
+}
+
+model Job {
+  id        String   @id @default(cuid())
+  status    String   @default("RUNNING") // RUNNING | DONE | FAILED
+  step      String   @default("queued")
+  progress  Int      @default(0)
+  logs      String   @default("[]") // JSON [{t, step, msg, level}]
+  paperIds  String   @default("[]")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ------------------------- accounts & chat history -------------------------
+
+model User {
+  id           String        @id @default(cuid())
+  email        String        @unique
+  name         String
+  phone        String?
+  location     String?
+  role         String        @default("user") // "user" | "admin"
+  passwordHash String        // bcrypt hash
+  createdAt    DateTime      @default(now())
+  sessions     Session[]
+  chats        ChatSession[]
+}
+
+model OtpCode {
+  id        String   @id @default(cuid())
+  email     String
+  code      String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([email])
+}
+
+model Session {
+  id        String   @id // opaque token handed to the client
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model ChatSession {
+  id        String        @id @default(cuid())
+  userId    String
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String        @default("New chat")
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  messages  ChatMessage[]
+}
+
+model ChatMessage {
+  id        String      @id @default(cuid())
+  sessionId String
+  chat      ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  role      String // "user" | "assistant"
+  content   String
+  citations String? // JSON ChatCitation[]
+  createdAt DateTime    @default(now())
+}
