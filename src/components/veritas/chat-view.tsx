@@ -453,13 +453,23 @@ export function ChatView({ user, onSignIn, onSignOut }: Props) {
             <div className="mx-1 rounded-xl border border-dashed border-slate-800/80 p-2.5 text-center bg-slate-900/30">
               <FileUp className="mx-auto h-4 w-4 text-slate-600" />
               <p className="mt-1 text-[11px] text-slate-400 font-medium">No files uploaded</p>
-              <button
-                type="button"
-                onClick={() => fileRef.current?.click()}
-                className="mt-1 text-[10px] text-emerald-400 hover:underline inline-block font-medium"
-              >
-                + Upload PDF, DOCX, or PPTX
-              </button>
+              <div className="mt-1.5 flex flex-col gap-1">
+                <button
+                  type="button"
+                  onClick={() => fileRef.current?.click()}
+                  className="text-[10px] text-emerald-400 hover:underline font-medium"
+                >
+                  + Upload PDF, DOCX, or PPTX
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void loadSamples()}
+                  disabled={uploading}
+                  className="text-[10px] text-teal-400 hover:underline font-medium"
+                >
+                  ⚡ Load Sample Papers
+                </button>
+              </div>
             </div>
           ) : (
             <ul className="space-y-1">
@@ -681,9 +691,10 @@ export function ChatView({ user, onSignIn, onSignOut }: Props) {
                     </p>
 
                     {/* Quick Suggestion Chips */}
-                    <div className="mt-6 flex flex-wrap justify-center gap-2 max-w-lg">
+                    <div className="mt-6 flex flex-wrap justify-center gap-2 max-w-xl">
                       {[
                         "👋 Hello Veritas, introduce yourself",
+                        "📑 Sample research paper layout for every sector",
                         "📄 What research topics are in this workspace?",
                         "🔍 How does evidence verification work?",
                         "⚛️ What is quantum computing superposition?",
@@ -715,7 +726,7 @@ export function ChatView({ user, onSignIn, onSignOut }: Props) {
                           m.error ? "border-rose-800/60 bg-rose-950/30 text-rose-200" : "border-slate-800 bg-slate-950/60 text-slate-200"
                         }`}
                       >
-                        <p>{renderAnswer(m)}</p>
+                        <div className="whitespace-pre-wrap leading-relaxed">{renderAnswer(m)}</div>
 
                         {m.citations && m.citations.length > 0 && (
                           <div className="mt-3 flex flex-wrap gap-1.5">

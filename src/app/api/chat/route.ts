@@ -16,6 +16,7 @@ import { db } from "@/lib/db";
 import { userFromToken } from "@/lib/auth";
 import { hybridSearch, tokenize, type RetrievalPassage } from "@/lib/retriever";
 import { chatJson, getEffectiveProvider } from "@/lib/llm";
+import { isSamplePaperQuery, getSamplePaperLayout } from "@/lib/sample-layouts";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -381,6 +382,13 @@ export async function POST(req: Request) {
       const ragMsg = "RAG (Retrieval-Augmented Generation) is the AI architecture that Veritas uses to ground every answer in factual evidence. When you upload documents (PPTX, DOCX, PDF, TXT, MD, CSV, JSON):\n\n1. **Chunking & Indexing**: Veritas breaks your documents into coherent passages and generates vector embeddings.\n2. **Hybrid Retrieval**: When you ask a question, Veritas finds the most relevant passages using vector similarity and BM25 search.\n3. **Evidence Grounding**: The AI formulates a clear answer and attaches exact page or slide citations ([1], [2]) directly to the source passages so every statement is provable.";
       const sid = await persist(ragMsg, []);
       return NextResponse.json({ answer: ragMsg, citations: [], sessionId: sid });
+    }
+
+    // Sample research paper layout handler (covers every sector: CS, Medicine, Engineering, Business, Social Sciences, Biotech)
+    if (isSamplePaperQuery(q)) {
+      const layoutAnswer = getSamplePaperLayout(q);
+      const sid = await persist(layoutAnswer, []);
+      return NextResponse.json({ answer: layoutAnswer, citations: [], sessionId: sid });
     }
 
     // Explicit workspace query check: only triggers when user specifically asks about workspace files
