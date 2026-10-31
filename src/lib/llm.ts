@@ -148,13 +148,15 @@ export async function chatJson<T>(
     messages,
     stream: false,
     format: "json",
-    think: false,
+    keep_alive: "24h",
     options: {
       temperature: opts.temperature ?? 0.3,
-      num_ctx: opts.contextWindow ?? 8192,
-      num_predict: opts.maxTokens ?? 350,
+      num_ctx: opts.contextWindow ?? 2048,
+      num_predict: opts.maxTokens ?? 180,
     },
   };
+  const isCloud = !!process.env.VERCEL || !cfg.baseUrl.includes("localhost");
+  const timeoutMs = isCloud ? 8500 : 45000;
   const res = await fetch(`${cfg.baseUrl}/api/chat`, {
     method: "POST",
     headers: {
@@ -163,7 +165,7 @@ export async function chatJson<T>(
       "User-Agent": "Veritas-Client/1.0",
     },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(300_000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) throw new Error(`ollama ${res.status}: ${await res.text().catch(() => "")}`.slice(0, 300));
   const data = (await res.json()) as { message?: { content?: string } };

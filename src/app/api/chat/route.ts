@@ -319,6 +319,13 @@ export async function POST(req: Request) {
       }
     }
 
+    // Direct standalone number or option choice (e.g. "1", "2", "3")
+    if (/^\d{1,3}$/.test(q)) {
+      const numAnswer = `Option ${q} selected. You can ask me to explain any research paper in your workspace, summarize uploaded documents, or verify claims.`;
+      const sid = await persist(numAnswer, []);
+      return NextResponse.json({ answer: numAnswer, citations: [], sessionId: sid });
+    }
+
     // RAG architecture query handler
     const isRagQuery = /\b(what is rag|explain rag|how does rag work|tell me about rag|about rag|what does rag mean|retrieval augmented generation)\b/i.test(q);
     if (isRagQuery) {

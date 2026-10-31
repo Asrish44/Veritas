@@ -269,9 +269,15 @@ export function ChatView({ user, onSignIn, onSignOut }: Props) {
           void refreshChats();
         }
       } catch (e) {
+        const errorText =
+          e instanceof Error && (e.message === "Failed to fetch" || e.message.includes("fetch"))
+            ? "Request timed out or connection was interrupted. Please try again."
+            : e instanceof Error
+            ? e.message
+            : String(e);
         setMessages((prev) => [
           ...prev,
-          { id: nextId(), role: "assistant", content: e instanceof Error ? e.message : String(e), error: true },
+          { id: nextId(), role: "assistant", content: errorText, error: true },
         ]);
       } finally {
         setSending(false);
