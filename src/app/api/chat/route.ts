@@ -62,35 +62,84 @@ You MUST respond with a single valid JSON object matching this schema:
 }
 `;
 
-/** Optional live web search helper using DuckDuckGo Instant Answer / Wikipedia */
+/** Robust live web search helper using DuckDuckGo Instant Answer and Wikipedia REST & Search APIs */
 async function fetchWebContext(query: string): Promise<string | null> {
   const cleanQ = query.replace(/[?!.]+$/, "").trim();
   if (cleanQ.length < 3) return null;
 
-  try {
-    const ddgUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(cleanQ)}&format=json&no_html=1&skip_disambig=1`;
-    const res = await fetch(ddgUrl, { signal: AbortSignal.timeout(2500) });
-    if (res.ok) {
-      const data = (await res.json()) as { AbstractText?: string; Heading?: string };
-      if (data.AbstractText) {
-        return `Web Reference (${data.Heading || cleanQ}): ${data.AbstractText}`;
-      }
-    }
-  } catch {}
+  // Extract core search topic by stripping common conversational question prefixes & fillers
+  const coreTopic = cleanQ
+    .replace(/^(who\s+(is|was|are|were)|what\s+(is|was|are|were|do|does)|how\s+(does|do|is|to|can)|explain|tell\s+me\s+about|overview\s+of|describe|define|history\s+of)\s+/i, "")
+    .replace(/\b(work|works|operate|operates|function|functions)\b/i, "")
+    .replace(/^(a|an|the)\s+/i, "")
+    .trim();
 
-  try {
-    const wikiUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(cleanQ.replace(/\s+/g, "_"))}`;
-    const res = await fetch(wikiUrl, {
-      headers: { "User-Agent": "Veritas-Research-Assistant/1.0" },
-      signal: AbortSignal.timeout(2500),
-    });
-    if (res.ok) {
-      const data = (await res.json()) as { extract?: string; title?: string };
-      if (data.extract) {
-        return `Web Reference (${data.title || cleanQ}): ${data.extract}`;
+  const searchCandidates = [coreTopic, cleanQ].filter((t, i, arr) => t && t.length >= 2 && arr.indexOf(t) === i);
+
+  // 1. DuckDuckGo Instant Answer
+  for (const term of searchCandidates) {
+    try {
+      const ddgUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(term)}&format=json&no_html=1&skip_disambig=1`;
+      const res = await fetch(ddgUrl, { signal: AbortSignal.timeout(2000) });
+      if (res.ok) {
+        const data = (await res.json()) as { AbstractText?: string; Heading?: string };
+        if (data.AbstractText) {
+          return `Web Reference (${data.Heading || term}): ${data.AbstractText}`;
+        }
       }
-    }
-  } catch {}
+    } catch { }
+  }
+
+  // 2. Wikipedia Direct Summary
+  for (const term of searchCandidates) {
+    try {
+      const wikiUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(term.replace(/\s+/g, "_"))}`;
+      const res = await fetch(wikiUrl, {
+        headers: { "User-Agent": "Veritas-Research-Assistant/1.0" },
+        signal: AbortSignal.timeout(2000),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { extract?: string; title?: string };
+        if (data.extract) {
+          return `Web Reference (${data.title || term}): ${data.extract}`;
+        }
+      }
+    } catch { }
+  }
+
+  // 3. Wikipedia Search API (Finds relevant articles for ANY natural language or conceptual query)
+  for (const term of searchCandidates) {
+    try {
+      const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(term)}&utf8=&format=json&srlimit=3`;
+      const sRes = await fetch(searchUrl, {
+        headers: { "User-Agent": "Veritas-Research-Assistant/1.0" },
+        signal: AbortSignal.timeout(2500),
+      });
+      if (sRes.ok) {
+        const sData = (await sRes.json()) as { query?: { search?: Array<{ title: string; snippet: string }> } };
+        const hits = sData?.query?.search || [];
+        if (hits.length > 0) {
+          const topHit = hits[0];
+          try {
+            const topSummaryUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(topHit.title.replace(/\s+/g, "_"))}`;
+            const sumRes = await fetch(topSummaryUrl, {
+              headers: { "User-Agent": "Veritas-Research-Assistant/1.0" },
+              signal: AbortSignal.timeout(2000),
+            });
+            if (sumRes.ok) {
+              const sumData = (await sumRes.json()) as { extract?: string; title?: string };
+              if (sumData.extract) {
+                return `Web Reference (${sumData.title}): ${sumData.extract}`;
+              }
+            }
+          } catch { }
+
+          const snippetText = hits.map((h) => `${h.title}: ${h.snippet.replace(/<[^>]+>/g, "")}`).join("\n");
+          return `Web Reference:\n${snippetText}`;
+        }
+      }
+    } catch { }
+  }
 
   return null;
 }
@@ -183,7 +232,7 @@ export async function POST(req: Request) {
           role: m.role as "user" | "assistant",
           content: m.content,
         }));
-      } catch {}
+      } catch { }
     }
 
     const papers = await db.paper.findMany({ include: { passages: true } });
@@ -315,7 +364,7 @@ export async function POST(req: Request) {
             const sid = await persist(answer, []);
             return NextResponse.json({ answer, citations: [], sessionId: sid });
           }
-        } catch {}
+        } catch { }
       }
     }
 
@@ -334,11 +383,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ answer: ragMsg, citations: [], sessionId: sid });
     }
 
-    const isAskingAboutWorkspace =
-      /\b(paper|papers|document|documents|file|files|workspace|source|sources|pdf|docx|pptx|ppt|txt|upload|uploaded|provided|attach|attached)\b/i.test(q) ||
-      /^(explain|summarize|summary|overview|what is this|tell me about|analyze|break down|walk me through|what does it say|details)\b/i.test(q);
+    // Explicit workspace query check: only triggers when user specifically asks about workspace files
+    const isExplicitWorkspaceQuery =
+      /\b(in (this |the |my )?workspace|in (this |the )?database|indexed in (this |the )?workspace)\b/i.test(q) ||
+      /\b(uploaded|attached|workspace)\s+(paper|papers|document|documents|file|files|source|sources|pdf|docx|pptx)\b/i.test(q) ||
+      /\b(my|the)\s+(uploaded|attached)\s+(paper|papers|document|documents|file|files|source|sources|pdf|docx|pptx)\b/i.test(q) ||
+      /^(what (research topics|papers|documents|files|topics) (are |do we have )?in (this |the |my )?workspace)/i.test(q) ||
+      /^(what is in (this |the |my )?(workspace|database))/i.test(q) ||
+      /^(list|show) (all )?(my |the )?(papers|documents|files|topics) in (this |the |my )?workspace/i.test(q) ||
+      /^(what did i upload|show uploaded files|what files do i have)/i.test(q);
 
-    if (isAskingAboutWorkspace && !hasWorkspacePapers) {
+    if (isExplicitWorkspaceQuery && !hasWorkspacePapers) {
       const noDocsMsg = "There are currently no research documents or files uploaded in this workspace. You can upload PPTX, Word (.docx), PDF, or text files using the paperclip icon in the chat bar, and Veritas will index and explain them for you.";
       const sid = await persist(noDocsMsg, []);
       return NextResponse.json({ answer: noDocsMsg, citations: [], sessionId: sid });
@@ -351,10 +406,13 @@ export async function POST(req: Request) {
     });
 
     // Check if user is asking about the workspace documents or broad explanation of indexed files
+    const isAskingAboutWorkspaceFiles =
+      isExplicitWorkspaceQuery ||
+      (/^(explain|summarize|summary|overview|what is this|tell me about|analyze|break down|walk me through|what does it say|details)\b/i.test(q) && hasWorkspacePapers);
+
     const isWorkspaceQuery = !isGreeting && hasWorkspacePapers && (
       hasLexicalMatch ||
-      isAskingAboutWorkspace ||
-      results.length > 0 ||
+      isAskingAboutWorkspaceFiles ||
       relevantClaims.length > 0
     );
 
@@ -373,7 +431,7 @@ export async function POST(req: Request) {
       const isWorkspaceOverview =
         /what (research topics|papers|documents|files|topics).*(workspace|here|database|indexed)/i.test(q) ||
         /what is in (this |the )?(workspace|database)/i.test(q) ||
-        /list (all )?(papers|documents|topics)/i.test(q);
+        /list (all )?(papers|documents|files|topics) in (this |the |my )?(workspace|database)/i.test(q);
 
       if (isWorkspaceOverview && !hasWorkspacePapers) {
         const noDocsMsg = "There are currently no research documents uploaded in this workspace. You can upload PDF, Word, or text files using the 'Upload Files' button or the paperclip icon in the chat bar, and Veritas will index and cite them for you.";
@@ -531,7 +589,7 @@ Respond warmly, introduce Veritas (created and developed by the Mavericks team),
         ? `Here are the closest passages in your papers: ${lines.join(" ")}`
         : hasWorkspacePapers
           ? `Your workspace documents don't contain passages that directly match that question.`
-          : `There are currently no documents uploaded in this workspace. You can upload files via the paperclip icon in the chat bar.`;
+          : `I couldn't find verified sources matching that question. You can upload relevant documents (PPTX, DOCX, PDF, TXT) to the workspace or rephrase your question.`;
     }
     if (relevantClaims.length > 0) {
       const withEv = relevantClaims.filter((x) => x.c.evidenceText);
