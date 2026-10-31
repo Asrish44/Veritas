@@ -141,7 +141,7 @@ export function AuthCard({ onSuccess, onBack, onSkip }: Props) {
 
       toast({
         title: "Authentication Verified",
-        description: `Welcome, ${data.user.name}! 2FA verification successful.`,
+        description: `Welcome, ${data.user.name}! Sign-in successful.`,
       });
 
       onSuccess(data.token, data.user);
@@ -277,13 +277,13 @@ export function AuthCard({ onSuccess, onBack, onSkip }: Props) {
               {isOtpStep ? <KeyRound className="h-6 w-6 text-emerald-400" /> : <ShieldCheck className="h-6 w-6 text-emerald-400" />}
             </div>
             <h1 className="mt-4 text-xl font-semibold tracking-tight">
-              {isOtpStep ? "Two-Factor Verification" : mode === "login" ? "Sign In to Veritas" : "Create Veritas Account"}
+              {isOtpStep ? "Security Verification" : mode === "login" ? "Sign In to Veritas" : "Create Veritas Account"}
             </h1>
             <p className="mt-1 text-xs text-slate-400">
               {isOtpStep
                 ? `Enter the 6-digit code sent to ${email}`
                 : mode === "login"
-                ? "Enter your credentials to initiate 2FA login."
+                ? "Enter your credentials to sign in."
                 : "Register with name, email & password."}
             </p>
           </div>
@@ -376,7 +376,7 @@ export function AuthCard({ onSuccess, onBack, onSkip }: Props) {
 
                   <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium" disabled={busy}>
                     {busy ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
-                    {mode === "login" ? "Verify Credentials & Send OTP" : "Register with 2FA"}
+                    {mode === "login" ? "Sign In" : "Create Account"}
                   </Button>
                 </form>
               </>

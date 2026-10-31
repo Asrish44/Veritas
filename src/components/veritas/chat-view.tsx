@@ -343,7 +343,7 @@ export function ChatView({ user, onSignIn, onSignOut }: Props) {
           const names = createdList.map((c: any) => c.name).join(", ");
           toast({
             title: `✓ ${createdList.length} document${createdList.length === 1 ? "" : "s"} indexed`,
-            description: `Successfully added: ${names}. Grounded with BGE embeddings for Qwen3-14B.`,
+            description: `Successfully added: ${names}. Indexed for evidence-grounded answers with Veritas.`,
           });
         }
         if (skippedList.length > 0) {
@@ -845,7 +845,7 @@ export function ChatView({ user, onSignIn, onSignOut }: Props) {
                 </div>
                 <div>
                   <h3 className="text-sm font-semibold text-slate-100">Workspace Documents</h3>
-                  <p className="text-[11px] text-slate-400">Sources indexed for evidence-grounded answers with Qwen3-14B</p>
+                  <p className="text-[11px] text-slate-400">Sources indexed for evidence-grounded answers with Veritas</p>
                 </div>
               </div>
               <button
