@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowUp,
   Check,
-  CheckCircle2,
   FileCheck,
   FileText,
   FileUp,
@@ -795,37 +794,6 @@ export function ChatView({ user, onSignIn, onSignOut }: Props) {
               </div>
             )}
 
-            {/* Active Sources Indicator Bar */}
-            {papers.length > 0 && (
-              <div className="flex items-center justify-between border-t border-slate-800/80 bg-slate-950/60 px-4 py-2 text-xs">
-                <div className="flex items-center gap-2 overflow-x-auto py-0.5 [&::-webkit-scrollbar]:hidden">
-                  <span className="shrink-0 text-[11px] font-semibold text-emerald-400 flex items-center gap-1">
-                    <CheckCircle2 className="h-3 w-3" />
-                    Sources ({papers.length}):
-                  </span>
-                  {papers.map((p) => {
-                    const ext = p.fileName.split(".").pop()?.toUpperCase() || "DOC";
-                    return (
-                      <span
-                        key={p.id}
-                        className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-slate-800 bg-slate-900/90 px-2 py-0.5 text-[11px] text-slate-300"
-                        title={`${p.fileName} (${p.pages} pages, ${p._count?.passages ?? 0} passages)`}
-                      >
-                        <span className="font-mono text-[9px] text-emerald-400 font-bold">.{ext}</span>
-                        <span className="max-w-[120px] truncate">{p.title}</span>
-                      </span>
-                    );
-                  })}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowFilesDialog(true)}
-                  className="shrink-0 text-[11px] text-emerald-400 hover:underline ml-2 font-medium"
-                >
-                  Manage
-                </button>
-              </div>
-            )}
 
             {/* input */}
             <form
