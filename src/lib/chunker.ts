@@ -52,7 +52,8 @@ export function chunkPaper(hash: string, pages: { page: number; text: string }[]
 
   for (const p of pages) {
     const text = normalize(p.text);
-    if (text.length < 40) continue; // skip near-empty pages
+    if (!text) continue;
+    if (text.length < 15 && pages.length > 1) continue; // skip blank pages in multi-page docs
     const paragraphs = text.split(/\n\n+/).flatMap((para) => {
       // split very long single-line paragraphs on sentence boundaries
       if (para.length <= TARGET) return [para];

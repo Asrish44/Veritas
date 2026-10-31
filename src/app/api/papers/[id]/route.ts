@@ -22,8 +22,17 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 }
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const { id } = await ctx.params;
-  await db.claim.deleteMany({ where: { paperId: id } });
-  await db.paper.delete({ where: { id } });
-  return NextResponse.json({ ok: true });
+  try {
+    const { id } = await ctx.params;
+    if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+
+    await db.claim.deleteMany({ where: { paperId: id } });
+    await db.passage.deleteMany({ where: { paperId: id } });
+    await db.paper.deleteMany({ where: { id } });
+
+    return NextResponse.json({ ok: true, success: true, deleted: id });
+  } catch (err) {
+    console.error("DELETE paper error:", err);
+    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
+  }
 }

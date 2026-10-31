@@ -100,3 +100,19 @@ export async function GET() {
   });
   return NextResponse.json({ papers });
 }
+
+export async function DELETE(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    if (!id) return NextResponse.json({ error: "id parameter required" }, { status: 400 });
+
+    await db.claim.deleteMany({ where: { paperId: id } });
+    await db.passage.deleteMany({ where: { paperId: id } });
+    await db.paper.deleteMany({ where: { id } });
+
+    return NextResponse.json({ ok: true, success: true, deleted: id });
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
+  }
+}

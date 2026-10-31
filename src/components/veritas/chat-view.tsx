@@ -186,16 +186,27 @@ export function ChatView({ user, onSignIn, onSignOut }: Props) {
   }, []);
 
   const deletePaper = async (id: string, name: string) => {
-    if (!confirm(`Remove "${name}" from this workspace?`)) return;
+    // Optimistic update: immediately remove from UI
+    setPapers((prev) => prev.filter((p) => p.id !== id));
     try {
-      const res = await fetch(`/api/papers/${id}`, { method: "DELETE" });
+      let res = await fetch(`/api/papers/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        res = await fetch(`/api/papers?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+      }
       if (res.ok) {
-        toast({ title: "Document removed", description: `Removed ${name} from workspace` });
+        toast({ title: "✓ Document removed", description: `Removed "${name}" from workspace` });
         void refreshHealth();
         void refreshPapers();
+      } else {
+        throw new Error(`Delete failed with status ${res.status}`);
       }
-    } catch {
-      toast({ title: "Failed to remove document", variant: "destructive" });
+    } catch (err) {
+      toast({
+        title: "Failed to remove document",
+        description: err instanceof Error ? err.message : "Error deleting file",
+        variant: "destructive",
+      });
+      void refreshPapers();
     }
   };
 

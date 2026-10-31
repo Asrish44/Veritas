@@ -168,6 +168,22 @@ export async function POST(req: Request) {
         claimText: null,
       });
     }
+
+    // If search had no lexical match but papers exist, populate with opening passages so model has context
+    if (citations.length === 0 && hasWorkspacePapers) {
+      for (const ps of passages.slice(0, 6)) {
+        citations.push({
+          n: citations.length + 1,
+          ref: ps.ref,
+          paperTitle: ps.paperTitle,
+          page: ps.page,
+          text: ps.text,
+          quote: null,
+          verdict: null,
+          claimText: null,
+        });
+      }
+    }
     for (const { c } of relevantClaims) {
       if (!c.evidenceText) continue;
       citations.push({
@@ -210,14 +226,29 @@ export async function POST(req: Request) {
 
     const isGreeting = /^(hello|hi|hey|greetings|good morning|good afternoon|good evening|howdy|sup|who are you|what can you do|help)\b/i.test(q);
 
+    const isAskingAboutWorkspace =
+      /\b(paper|papers|document|documents|file|files|workspace|source|sources|pdf|docx|txt|upload|uploaded|provided|attach|attached)\b/i.test(q) ||
+      /^(explain|summarize|summary|overview|what is this|tell me about|analyze|break down|walk me through|what does it say|details)\b/i.test(q);
+
+    if (isAskingAboutWorkspace && !hasWorkspacePapers) {
+      const noDocsMsg = "There are currently no research documents or files uploaded in this workspace. You can upload PDF, Word (.docx), or text files using the paperclip icon in the chat bar, and Veritas will index and explain them for you.";
+      const sid = await persist(noDocsMsg, []);
+      return NextResponse.json({ answer: noDocsMsg, citations: [], sessionId: sid });
+    }
+
     // Check if query has direct lexical relevance to the retrieved passages
     const hasLexicalMatch = results.some((r) => {
       const toks = tokenize(r.text);
       return toks.some((t) => qTok.has(t));
     });
 
-    // Check if user is asking about the workspace documents
-    const isWorkspaceQuery = !isGreeting && (hasLexicalMatch || relevantClaims.length > 0);
+    // Check if user is asking about the workspace documents or broad explanation of indexed files
+    const isWorkspaceQuery = !isGreeting && hasWorkspacePapers && (
+      hasLexicalMatch ||
+      isAskingAboutWorkspace ||
+      results.length > 0 ||
+      relevantClaims.length > 0
+    );
 
     // For general/web queries where workspace files don't directly match, fetch web knowledge
     let webContext: string | null = null;
@@ -253,6 +284,7 @@ Summarize what topics these specific research papers cover in 2-3 clear, informa
         promptContent = `The user is greeting: "${q}".
 Respond warmly, introduce Veritas, and explain how you can help research their indexed workspace documents, verify research claims, or answer any general questions.`;
       } else if (isWorkspaceQuery) {
+        const fileNames = papers.map((p) => `"${p.title}" (${p.fileName})`).join(", ");
         const ctx = citations
           .map((c) =>
             c.verdict
@@ -260,7 +292,7 @@ Respond warmly, introduce Veritas, and explain how you can help research their i
               : `[${c.n}] Passage from ${c.paperTitle}, p.${c.page}:\n${c.text}`
           )
           .join("\n\n");
-        promptContent = `WORKSPACE REFERENCE CONTEXT:\n${ctx}\n\nQUESTION: ${q}`;
+        promptContent = `WORKSPACE REFERENCE CONTEXT (from uploaded files: ${fileNames}):\n${ctx}\n\nQUESTION: ${q}\n\nExplain and answer the user question using the workspace reference context provided above. Always cite the relevant passages using [1], [2], etc.`;
       } else {
         // General or web-grounded query
         promptContent = webContext
@@ -359,7 +391,7 @@ Respond warmly, introduce Veritas, and explain how you can help research their i
         ? `Here are the closest passages in your papers: ${lines.join(" ")}`
         : hasWorkspacePapers
           ? `Your workspace documents don't contain passages that directly match that question.`
-          : `There are currently no documents uploaded in this workspace. You can upload files via the 'Upload Files' button or paperclip icon.`;
+          : `There are currently no documents uploaded in this workspace. You can upload files via the paperclip icon in the chat bar.`;
     }
     if (relevantClaims.length > 0) {
       const withEv = relevantClaims.filter((x) => x.c.evidenceText);
