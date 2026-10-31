@@ -7,6 +7,7 @@
 
 import { extractPdf } from "./pdf";
 import mammoth from "mammoth";
+import JSZip from "jszip";
 
 export interface ParsedDocument {
   pages: { page: number; text: string }[];
@@ -97,7 +98,66 @@ export async function parseDocument(fileName: string, buffer: Buffer): Promise<P
     }
   }
 
-  // 3. Markdown
+  // 3. PPTX / PowerPoint Presentation
+  if (ext === "pptx" || ext === "ppt") {
+    try {
+      const zip = await JSZip.loadAsync(buffer);
+      const slideFileNames = Object.keys(zip.files).filter((f) => /^ppt\/slides\/slide\d+\.xml$/i.test(f));
+
+      slideFileNames.sort((a, b) => {
+        const numA = parseInt(a.match(/slide(\d+)\.xml/i)?.[1] || "0", 10);
+        const numB = parseInt(b.match(/slide(\d+)\.xml/i)?.[1] || "0", 10);
+        return numA - numB;
+      });
+
+      const pages: { page: number; text: string }[] = [];
+      const fullTextParts: string[] = [];
+
+      for (let i = 0; i < slideFileNames.length; i++) {
+        const slideName = slideFileNames[i];
+        const file = zip.file(slideName);
+        if (!file) continue;
+
+        const xml = await file.async("text");
+        // Extract all text inside <a:t>...</a:t>
+        const tagMatches = xml.match(/<a:t[^>]*>([\s\S]*?)<\/a:t>/gi) || [];
+        const slideTextChunks: string[] = [];
+
+        for (const tm of tagMatches) {
+          const raw = tm.replace(/<[^>]+>/g, "").trim();
+          if (raw) {
+            const decoded = raw
+              .replace(/&amp;/g, "&")
+              .replace(/&lt;/g, "<")
+              .replace(/&gt;/g, ">")
+              .replace(/&quot;/g, '"')
+              .replace(/&apos;/g, "'");
+            slideTextChunks.push(decoded);
+          }
+        }
+
+        const slideText = slideTextChunks.join(" ").trim();
+        if (slideText) {
+          const formattedSlide = `[Slide ${i + 1}] ${slideText}`;
+          pages.push({ page: i + 1, text: formattedSlide });
+          fullTextParts.push(formattedSlide);
+        }
+      }
+
+      if (pages.length > 0) {
+        return {
+          pages,
+          nPages: pages.length,
+          fullText: fullTextParts.join("\n\n"),
+          format: "PPTX",
+        };
+      }
+    } catch (pptxErr) {
+      console.warn("PPTX zip extraction error, falling back to text scan:", pptxErr);
+    }
+  }
+
+  // 4. Markdown
   if (ext === "md" || ext === "markdown") {
     const text = buffer.toString("utf-8");
     const pages = paginateText(text);
@@ -181,6 +241,6 @@ export async function parseDocument(fileName: string, buffer: Buffer): Promise<P
     /* ignore */
   }
 
-  throw new Error(`Unsupported or unreadable file format (.${ext}). Please upload DOCX, PDF, TXT, MD, CSV, or JSON.`);
+  throw new Error(`Unsupported or unreadable file format (.${ext}). Please upload PPTX, DOCX, PDF, TXT, MD, CSV, or JSON.`);
 }
 

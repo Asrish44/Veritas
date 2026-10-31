@@ -123,7 +123,7 @@ const FEATURES = [
 ];
 
 const STEPS = [
-  { n: "01", title: "Add DOCX, PDF, TXT or MD", body: "Drag and drop any documents — DOCX, PDF, TXT, MD, CSV, or JSON. They're indexed locally for Veritas." },
+  { n: "01", title: "Add PPTX, DOCX, PDF, TXT or MD", body: "Drag and drop any documents — PPTX, DOCX, PDF, TXT, MD, CSV, or JSON. They're indexed locally for Veritas." },
   { n: "02", title: "Ask in plain words", body: "Type your question like you'd ask a friend. Veritas searches every page for the lines that matter." },
   { n: "03", title: "Answers get checked", body: "Each statement in the answer is matched to the exact lines in your papers that back it up." },
   { n: "04", title: "See the proof", body: "Tap a number like [1] to open the exact passage and page the answer came from." },
@@ -332,7 +332,7 @@ export function Landing({ onSignIn, onGetStarted }: Props) {
               Stop trusting. Start <span className="bg-gradient-to-r from-emerald-300 to-emerald-500 bg-clip-text text-transparent">verifying</span>.
             </h2>
             <p className="relative mx-auto mt-2.5 max-w-md text-sm text-slate-400">
-              Get started, drop DOCX, PDF, TXT or MD files, and ask Veritas anything — the proof is one tap away.
+              Get started, drop PPTX, DOCX, PDF, TXT or MD files, and ask Veritas anything — the proof is one tap away.
             </p>
             <div className="relative mt-6 flex flex-wrap items-center justify-center gap-3">
               <Button size="lg" className="h-11 px-6 shadow-[0_0_32px_-8px_rgba(16,185,129,0.7)]" onClick={onGetStarted || onSignIn}>

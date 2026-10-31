@@ -452,7 +452,7 @@ export function ChatView({ user, onSignIn, onSignOut }: Props) {
                 onClick={() => fileRef.current?.click()}
                 className="mt-1 text-[10px] text-emerald-400 hover:underline inline-block font-medium"
               >
-                + Upload PDF or DOCX
+                + Upload PDF, DOCX, or PPTX
               </button>
             </div>
           ) : (
@@ -620,7 +620,7 @@ export function ChatView({ user, onSignIn, onSignOut }: Props) {
               <input
                 ref={fileRef}
                 type="file"
-                accept=".pdf,.docx,.doc,.txt,.md,.markdown,.csv,.json,.html"
+                accept=".pdf,.docx,.doc,.pptx,.ppt,.txt,.md,.markdown,.csv,.json,.html"
                 multiple
                 className="sr-only"
                 onChange={(e) => void upload(e.target.files)}
