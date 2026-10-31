@@ -35,3 +35,4 @@ Corporate CFOs and treasurers in developing economies should treat ESG reporting
 ## References
 1. Flammer, C. (2021). Corporate green bonds. Journal of Financial Economics, 142(2), 499-516.
 2. Baker, M., et al. (2018). Financing the response to climate change: The pricing and ownership of U.S. green bonds. NBER Working Paper No. 24889.
+

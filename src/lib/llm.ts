@@ -138,7 +138,7 @@ export async function chatJson<T>(
     }));
 
   const messages = [
-    { role: "system", content: `${system}\n\nAnswer with a single valid JSON object and nothing else. /no_think` },
+    { role: "system", content: `${system}\n\nCRITICAL: Answer concisely in single JSON object. Output NO thought tokens or <think> tags. /no_think` },
     ...historyMessages,
     { role: "user", content: user },
   ];
@@ -151,12 +151,12 @@ export async function chatJson<T>(
     keep_alive: "24h",
     options: {
       temperature: opts.temperature ?? 0.3,
-      num_ctx: opts.contextWindow ?? 2048,
-      num_predict: opts.maxTokens ?? 180,
+      num_ctx: opts.contextWindow ?? 1536,
+      num_predict: opts.maxTokens ?? 140,
     },
   };
   const isCloud = !!process.env.VERCEL || !cfg.baseUrl.includes("localhost");
-  const timeoutMs = isCloud ? 8500 : 45000;
+  const timeoutMs = isCloud ? 8000 : 12000;
   const res = await fetch(`${cfg.baseUrl}/api/chat`, {
     method: "POST",
     headers: {

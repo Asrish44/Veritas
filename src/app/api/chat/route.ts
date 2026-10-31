@@ -63,7 +63,7 @@ You MUST respond with a single valid JSON object matching this schema:
 }
 `;
 
-/** Robust live web search helper using DuckDuckGo Instant Answer and Wikipedia REST & Search APIs */
+/** Ultra-fast concurrent live web search helper using parallel Wikipedia REST and DuckDuckGo lookups */
 async function fetchWebContext(query: string): Promise<string | null> {
   const cleanQ = query.replace(/[?!.]+$/, "").trim();
   if (cleanQ.length < 3) return null;
@@ -77,44 +77,43 @@ async function fetchWebContext(query: string): Promise<string | null> {
 
   const searchCandidates = [coreTopic, cleanQ].filter((t, i, arr) => t && t.length >= 2 && arr.indexOf(t) === i);
 
-  // 1. DuckDuckGo Instant Answer
-  for (const term of searchCandidates) {
-    try {
-      const ddgUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(term)}&format=json&no_html=1&skip_disambig=1`;
-      const res = await fetch(ddgUrl, { signal: AbortSignal.timeout(2000) });
-      if (res.ok) {
-        const data = (await res.json()) as { AbstractText?: string; Heading?: string };
-        if (data.AbstractText) {
-          return `Web Reference (${data.Heading || term}): ${data.AbstractText}`;
-        }
-      }
-    } catch { }
-  }
-
-  // 2. Wikipedia Direct Summary
-  for (const term of searchCandidates) {
-    try {
-      const wikiUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(term.replace(/\s+/g, "_"))}`;
-      const res = await fetch(wikiUrl, {
-        headers: { "User-Agent": "Veritas-Research-Assistant/1.0" },
-        signal: AbortSignal.timeout(2000),
-      });
-      if (res.ok) {
+  // Strategy 1: Concurrent Direct Lookups (Wikipedia Direct Summary + DuckDuckGo Instant Answer in parallel)
+  const directLookups = searchCandidates.flatMap((term) => [
+    // Wikipedia Direct Summary (Fastest CDN REST cache, typically <300ms)
+    fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(term.replace(/\s+/g, "_"))}`, {
+      headers: { "User-Agent": "Veritas-Research-Assistant/1.0" },
+      signal: AbortSignal.timeout(1800),
+    })
+      .then(async (res) => {
+        if (!res.ok) return null;
         const data = (await res.json()) as { extract?: string; title?: string };
-        if (data.extract) {
-          return `Web Reference (${data.title || term}): ${data.extract}`;
-        }
-      }
-    } catch { }
-  }
+        return data.extract ? `Web Reference (${data.title || term}): ${data.extract}` : null;
+      })
+      .catch(() => null),
 
-  // 3. Wikipedia Search API (Finds relevant articles for ANY natural language or conceptual query)
+    // DuckDuckGo Instant Answer
+    fetch(`https://api.duckduckgo.com/?q=${encodeURIComponent(term)}&format=json&no_html=1&skip_disambig=1`, {
+      signal: AbortSignal.timeout(1800),
+    })
+      .then(async (res) => {
+        if (!res.ok) return null;
+        const data = (await res.json()) as { AbstractText?: string; Heading?: string };
+        return data.AbstractText ? `Web Reference (${data.Heading || term}): ${data.AbstractText}` : null;
+      })
+      .catch(() => null),
+  ]);
+
+  const directResults = await Promise.all(directLookups);
+  const validDirect = directResults.find(Boolean);
+  if (validDirect) return validDirect;
+
+  // Strategy 2: Fast Wikipedia Search API fallback
   for (const term of searchCandidates) {
     try {
-      const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(term)}&utf8=&format=json&srlimit=3`;
+      const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(term)}&utf8=&format=json&srlimit=2`;
       const sRes = await fetch(searchUrl, {
         headers: { "User-Agent": "Veritas-Research-Assistant/1.0" },
-        signal: AbortSignal.timeout(2500),
+        signal: AbortSignal.timeout(1800),
       });
       if (sRes.ok) {
         const sData = (await sRes.json()) as { query?: { search?: Array<{ title: string; snippet: string }> } };
@@ -122,21 +121,20 @@ async function fetchWebContext(query: string): Promise<string | null> {
         if (hits.length > 0) {
           const topHit = hits[0];
           try {
-            const topSummaryUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(topHit.title.replace(/\s+/g, "_"))}`;
-            const sumRes = await fetch(topSummaryUrl, {
-              headers: { "User-Agent": "Veritas-Research-Assistant/1.0" },
-              signal: AbortSignal.timeout(2000),
-            });
+            const sumRes = await fetch(
+              `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(topHit.title.replace(/\s+/g, "_"))}`,
+              {
+                headers: { "User-Agent": "Veritas-Research-Assistant/1.0" },
+                signal: AbortSignal.timeout(1500),
+              }
+            );
             if (sumRes.ok) {
               const sumData = (await sumRes.json()) as { extract?: string; title?: string };
-              if (sumData.extract) {
-                return `Web Reference (${sumData.title}): ${sumData.extract}`;
-              }
+              if (sumData.extract) return `Web Reference (${sumData.title}): ${sumData.extract}`;
             }
           } catch { }
 
-          const snippetText = hits.map((h) => `${h.title}: ${h.snippet.replace(/<[^>]+>/g, "")}`).join("\n");
-          return `Web Reference:\n${snippetText}`;
+          return `Web Reference (${topHit.title}): ${topHit.snippet.replace(/<[^>]+>/g, "")}`;
         }
       }
     } catch { }
@@ -218,6 +216,94 @@ export async function POST(req: Request) {
       if (!owned) chatSessionId = null;
     }
 
+    // persist to the user's chat history when signed in
+    const persist = async (answerText: string, cites: ChatCitation[]): Promise<string | null> => {
+      if (!user) return null;
+      try {
+        let session = chatSessionId
+          ? await db.chatSession.findUnique({ where: { id: chatSessionId } })
+          : null;
+        if (!session) {
+          session = await db.chatSession.create({
+            data: { userId: user.id, title: q.length > 60 ? `${q.slice(0, 60)}…` : q },
+          });
+          chatSessionId = session.id;
+        }
+        await db.chatMessage.createMany({
+          data: [
+            { sessionId: session.id, role: "user", content: q },
+            { sessionId: session.id, role: "assistant", content: answerText, citations: JSON.stringify(cites) },
+          ],
+        });
+        await db.chatSession.update({ where: { id: session.id }, data: { updatedAt: new Date() } });
+        return session.id;
+      } catch {
+        return null;
+      }
+    };
+
+    /* -------------------- FAST PATH: Instant 0-overhead handlers (<5ms) -------------------- */
+
+    // 1. Creator Query Handler
+    const isCreatorQuery =
+      /\b(who\s+(made|created|built|developed|designed|founded)\s+(you|u)|(your|the)\s+(creator|founder|developer|author|maker|team)|who\s+(are|is)\s+(your|the)\s+(founders?|creators?|developers?|team)|who\s+founded\s+(you|u)|who\s+made\s+(you|u)|founder|founders|who\s+built\s+(you|u)|team\s+behind)\b/i.test(q) ||
+      /^(who\s+made\s+you|who\s+made\s+u|founder|founders|who\s+is\s+founder|who\s+is\s+your\s+founder|who\s+created\s+you|who\s+built\s+you)\b/i.test(q.trim());
+
+    if (isCreatorQuery) {
+      const creatorMsg = "I was created and developed by the Mavericks team. As Veritas, I am designed to assist you with evidence-grounded research, verifying claims, and answering questions backed by your documents and proof.";
+      const sid = await persist(creatorMsg, []);
+      return NextResponse.json({ answer: creatorMsg, citations: [], sessionId: sid });
+    }
+
+    // 2. Direct simple math/arithmetic evaluator (e.g. "2+2", "what is 2 + 2", "5 * 10", "100 / 4")
+    const mathMatch = q.match(/^(?:what is\s+|calculate\s+|solve\s+)?([0-9\s.+\-*/%^()]+)\??$/i);
+    if (mathMatch) {
+      const expr = mathMatch[1].trim();
+      if (/^[\d\s.+\-*/%^()]+$/.test(expr) && /\d/.test(expr) && /[+\-*/%^]/.test(expr)) {
+        try {
+          const sanitized = expr.replace(/[^0-9+\-*/().]/g, "");
+          const result = Function(`"use strict"; return (${sanitized});`)();
+          if (typeof result === "number" && !isNaN(result) && isFinite(result)) {
+            const answer = `${expr} = ${result}`;
+            const sid = await persist(answer, []);
+            return NextResponse.json({ answer, citations: [], sessionId: sid });
+          }
+        } catch { }
+      }
+    }
+
+    // 3. Direct standalone number or option choice (e.g. "1", "2", "3")
+    if (/^\d{1,3}$/.test(q)) {
+      const numAnswer = `Option ${q} selected. You can ask me to explain any research paper in your workspace, summarize uploaded documents, or verify claims.`;
+      const sid = await persist(numAnswer, []);
+      return NextResponse.json({ answer: numAnswer, citations: [], sessionId: sid });
+    }
+
+    // 4. RAG architecture query handler
+    const isRagQuery = /\b(what is rag|explain rag|how does rag work|tell me about rag|about rag|what does rag mean|retrieval augmented generation)\b/i.test(q);
+    if (isRagQuery) {
+      const ragMsg = "RAG (Retrieval-Augmented Generation) is the AI architecture that Veritas uses to ground every answer in factual evidence. When you upload documents (PPTX, DOCX, PDF, TXT, MD, CSV, JSON):\n\n1. **Chunking & Indexing**: Veritas breaks your documents into coherent passages and generates vector embeddings.\n2. **Hybrid Retrieval**: When you ask a question, Veritas finds the most relevant passages using vector similarity and BM25 search.\n3. **Evidence Grounding**: The AI formulates a clear answer and attaches exact page or slide citations ([1], [2]) directly to the source passages so every statement is provable.";
+      const sid = await persist(ragMsg, []);
+      return NextResponse.json({ answer: ragMsg, citations: [], sessionId: sid });
+    }
+
+    // 5. Sample research paper layout handler (covers every sector: CS, Medicine, Engineering, Business, Social Sciences, Biotech)
+    if (isSamplePaperQuery(q)) {
+      const layoutAnswer = getSamplePaperLayout(q);
+      const sid = await persist(layoutAnswer, []);
+      return NextResponse.json({ answer: layoutAnswer, citations: [], sessionId: sid });
+    }
+
+    // 6. Greetings handler
+    const isGreeting = /^(hello|hi|hey|greetings|good morning|good afternoon|good evening|howdy|sup|who are you|what can you do|help)\b/i.test(q);
+    if (isGreeting) {
+      const greetMsg = "Hello! I am Veritas, your evidence-grounded research assistant created and developed by the Mavericks team. You can upload documents (PDF, DOCX, PPTX) to analyze and verify claims, or ask any scientific and research question.";
+      const sid = await persist(greetMsg, []);
+      return NextResponse.json({ answer: greetMsg, citations: [], sessionId: sid });
+    }
+
+    /* -------------------- DEEP PATH: Workspace & Semantic Processing -------------------- */
+
     let conversationHistory: Array<{ role: "user" | "assistant"; content: string }> = Array.isArray(history)
       ? history.filter((m) => (m.role === "user" || m.role === "assistant") && m.content)
       : [];
@@ -239,6 +325,22 @@ export async function POST(req: Request) {
     const papers = await db.paper.findMany({ include: { passages: true } });
     const hasWorkspacePapers = papers.length > 0;
     const titleOf = new Map(papers.map((p) => [p.id, p.title]));
+
+    // Explicit workspace query check: only triggers when user specifically asks about workspace files
+    const isExplicitWorkspaceQuery =
+      /\b(in (this |the |my )?workspace|in (this |the )?database|indexed in (this |the )?workspace)\b/i.test(q) ||
+      /\b(uploaded|attached|workspace)\s+(paper|papers|document|documents|file|files|source|sources|pdf|docx|pptx)\b/i.test(q) ||
+      /\b(my|the)\s+(uploaded|attached)\s+(paper|papers|document|documents|file|files|source|sources|pdf|docx|pptx)\b/i.test(q) ||
+      /^(what (research topics|papers|documents|files|topics) (are |do we have )?in (this |the |my )?workspace)/i.test(q) ||
+      /^(what is in (this |the |my )?(workspace|database))/i.test(q) ||
+      /^(list|show) (all )?(my |the )?(papers|documents|files|topics) in (this |the |my )?workspace/i.test(q) ||
+      /^(what did i upload|show uploaded files|what files do i have)/i.test(q);
+
+    if (isExplicitWorkspaceQuery && !hasWorkspacePapers) {
+      const noDocsMsg = "There are currently no research documents or files uploaded in this workspace. You can upload PPTX, Word (.docx), PDF, or text files using the paperclip icon in the chat bar, and Veritas will index and explain them for you.";
+      const sid = await persist(noDocsMsg, []);
+      return NextResponse.json({ answer: noDocsMsg, citations: [], sessionId: sid });
+    }
 
     const passages: RetrievalPassage[] = papers.flatMap((p) =>
       p.passages.map((ps) => ({
@@ -314,99 +416,6 @@ export async function POST(req: Request) {
       });
     }
 
-    // persist to the user's chat history when signed in
-    const persist = async (answerText: string, cites: ChatCitation[]): Promise<string | null> => {
-      if (!user) return null;
-      try {
-        let session = chatSessionId
-          ? await db.chatSession.findUnique({ where: { id: chatSessionId } })
-          : null;
-        if (!session) {
-          session = await db.chatSession.create({
-            data: { userId: user.id, title: q.length > 60 ? `${q.slice(0, 60)}…` : q },
-          });
-          chatSessionId = session.id;
-        }
-        await db.chatMessage.createMany({
-          data: [
-            { sessionId: session.id, role: "user", content: q },
-            { sessionId: session.id, role: "assistant", content: answerText, citations: JSON.stringify(cites) },
-          ],
-        });
-        await db.chatSession.update({ where: { id: session.id }, data: { updatedAt: new Date() } });
-        return session.id;
-      } catch {
-        return null;
-      }
-    };
-
-    const isGreeting = /^(hello|hi|hey|greetings|good morning|good afternoon|good evening|howdy|sup|who are you|what can you do|help)\b/i.test(q);
-
-    const isCreatorQuery =
-      /\b(who\s+(made|created|built|developed|designed|founded)\s+(you|u)|(your|the)\s+(creator|founder|developer|author|maker|team)|who\s+(are|is)\s+(your|the)\s+(founders?|creators?|developers?|team)|who\s+founded\s+(you|u)|who\s+made\s+(you|u)|founder|founders|who\s+built\s+(you|u)|team\s+behind)\b/i.test(q) ||
-      /^(who\s+made\s+you|who\s+made\s+u|founder|founders|who\s+is\s+founder|who\s+is\s+your\s+founder|who\s+created\s+you|who\s+built\s+you)\b/i.test(q.trim());
-
-    if (isCreatorQuery) {
-      const creatorMsg = "I was created and developed by the Mavericks team. As Veritas, I am designed to assist you with evidence-grounded research, verifying claims, and answering questions backed by your documents and proof.";
-      const sid = await persist(creatorMsg, []);
-      return NextResponse.json({ answer: creatorMsg, citations: [], sessionId: sid });
-    }
-
-    // Direct simple math/arithmetic evaluator (e.g. "2+2", "what is 2 + 2", "5 * 10", "100 / 4")
-    const mathMatch = q.match(/^(?:what is\s+|calculate\s+|solve\s+)?([0-9\s.+\-*/%^()]+)\??$/i);
-    if (mathMatch) {
-      const expr = mathMatch[1].trim();
-      if (/^[\d\s.+\-*/%^()]+$/.test(expr) && /\d/.test(expr) && /[+\-*/%^]/.test(expr)) {
-        try {
-          const sanitized = expr.replace(/[^0-9+\-*/().]/g, "");
-          const result = Function(`"use strict"; return (${sanitized});`)();
-          if (typeof result === "number" && !isNaN(result) && isFinite(result)) {
-            const answer = `${expr} = ${result}`;
-            const sid = await persist(answer, []);
-            return NextResponse.json({ answer, citations: [], sessionId: sid });
-          }
-        } catch { }
-      }
-    }
-
-    // Direct standalone number or option choice (e.g. "1", "2", "3")
-    if (/^\d{1,3}$/.test(q)) {
-      const numAnswer = `Option ${q} selected. You can ask me to explain any research paper in your workspace, summarize uploaded documents, or verify claims.`;
-      const sid = await persist(numAnswer, []);
-      return NextResponse.json({ answer: numAnswer, citations: [], sessionId: sid });
-    }
-
-    // RAG architecture query handler
-    const isRagQuery = /\b(what is rag|explain rag|how does rag work|tell me about rag|about rag|what does rag mean|retrieval augmented generation)\b/i.test(q);
-    if (isRagQuery) {
-      const ragMsg = "RAG (Retrieval-Augmented Generation) is the AI architecture that Veritas uses to ground every answer in factual evidence. When you upload documents (PPTX, DOCX, PDF, TXT, MD, CSV, JSON):\n\n1. **Chunking & Indexing**: Veritas breaks your documents into coherent passages and generates vector embeddings.\n2. **Hybrid Retrieval**: When you ask a question, Veritas finds the most relevant passages using vector similarity and BM25 search.\n3. **Evidence Grounding**: The AI formulates a clear answer and attaches exact page or slide citations ([1], [2]) directly to the source passages so every statement is provable.";
-      const sid = await persist(ragMsg, []);
-      return NextResponse.json({ answer: ragMsg, citations: [], sessionId: sid });
-    }
-
-    // Sample research paper layout handler (covers every sector: CS, Medicine, Engineering, Business, Social Sciences, Biotech)
-    if (isSamplePaperQuery(q)) {
-      const layoutAnswer = getSamplePaperLayout(q);
-      const sid = await persist(layoutAnswer, []);
-      return NextResponse.json({ answer: layoutAnswer, citations: [], sessionId: sid });
-    }
-
-    // Explicit workspace query check: only triggers when user specifically asks about workspace files
-    const isExplicitWorkspaceQuery =
-      /\b(in (this |the |my )?workspace|in (this |the )?database|indexed in (this |the )?workspace)\b/i.test(q) ||
-      /\b(uploaded|attached|workspace)\s+(paper|papers|document|documents|file|files|source|sources|pdf|docx|pptx)\b/i.test(q) ||
-      /\b(my|the)\s+(uploaded|attached)\s+(paper|papers|document|documents|file|files|source|sources|pdf|docx|pptx)\b/i.test(q) ||
-      /^(what (research topics|papers|documents|files|topics) (are |do we have )?in (this |the |my )?workspace)/i.test(q) ||
-      /^(what is in (this |the |my )?(workspace|database))/i.test(q) ||
-      /^(list|show) (all )?(my |the )?(papers|documents|files|topics) in (this |the |my )?workspace/i.test(q) ||
-      /^(what did i upload|show uploaded files|what files do i have)/i.test(q);
-
-    if (isExplicitWorkspaceQuery && !hasWorkspacePapers) {
-      const noDocsMsg = "There are currently no research documents or files uploaded in this workspace. You can upload PPTX, Word (.docx), PDF, or text files using the paperclip icon in the chat bar, and Veritas will index and explain them for you.";
-      const sid = await persist(noDocsMsg, []);
-      return NextResponse.json({ answer: noDocsMsg, citations: [], sessionId: sid });
-    }
-
     // Check if query has direct lexical relevance to the retrieved passages
     const hasLexicalMatch = results.some((r) => {
       const toks = tokenize(r.text);
@@ -416,7 +425,7 @@ export async function POST(req: Request) {
     // Check if user is asking about the workspace documents or broad explanation of indexed files
     const isAskingAboutWorkspaceFiles =
       isExplicitWorkspaceQuery ||
-      (/^(explain|summarize|summary|overview|what is this|tell me about|analyze|break down|walk me through|what does it say|details)\b/i.test(q) && hasWorkspacePapers);
+      (/\b(the|this|my|our)\s+(paper|papers|document|documents|file|files|study|research|findings|results|methodology|work)\b/i.test(q) && hasWorkspacePapers);
 
     const isWorkspaceQuery = !isGreeting && hasWorkspacePapers && (
       hasLexicalMatch ||
@@ -428,6 +437,16 @@ export async function POST(req: Request) {
     let webContext: string | null = null;
     if (!isGreeting && !isWorkspaceQuery) {
       webContext = await fetchWebContext(q);
+      if (webContext) {
+        const isEntityOrBioQuery =
+          /^(who (is|was|are|were)|what (is|was|are|were)|tell me about|about|biography of|who's)?\s*[a-z0-9\s.'-]{2,60}\??$/i.test(q) &&
+          !isGreeting &&
+          !isCreatorQuery &&
+          !isRagQuery;
+        const cleanWeb = smartSynthesizeAnswer(webContext, isEntityOrBioQuery);
+        const sid = await persist(cleanWeb, []);
+        return NextResponse.json({ answer: cleanWeb, citations: [], sessionId: sid });
+      }
     }
 
     const provider = await getEffectiveProvider();

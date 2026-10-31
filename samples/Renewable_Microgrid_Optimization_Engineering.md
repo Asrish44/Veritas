@@ -34,3 +34,4 @@ The adaptive MP-VSG topology resolves inertia starvation in converter-dominated 
 ## References
 1. Bevrani, H., et al. (2021). Virtual synchronous generators: A survey on control architectures. IEEE Transactions on Power Systems, 36(4), 3125-3137.
 2. D'Arco, S., & Suul, J. A. (2014). Equivalence of virtual synchronous machines and droop-controlled inverters. IEEE Transactions on Smart Grid, 5(1), 394-403.
+

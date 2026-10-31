@@ -264,3 +264,4 @@ Below is the universal structural standard for peer-reviewed academic papers, fo
 ### 💡 Pro-Tip for Veritas Users:
 You can upload any research paper in **PDF, Word (.docx), PPTX, Markdown, or TXT** via the paperclip icon in the chat bar. Veritas will index every page and passage, extract the objectives, methodology, and limitations, and cross-examine any claim against the text with exact bracketed citations!`;
 }
+

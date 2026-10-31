@@ -169,7 +169,10 @@ export async function hybridSearch(
   let semantic = false;
   const withVectors = passages.some((p) => p.embedding && p.embedding.length > 0);
   if (withVectors) {
-    const qVec = await embedTexts([query]);
+    const qVec = await Promise.race([
+      embedTexts([query]),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 1200)),
+    ]);
     if (qVec && qVec[0]) {
       semantic = true;
       const sims = passages.map((p, i) => ({
